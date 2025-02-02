@@ -1,4 +1,4 @@
-(ns hitype.times-table
+(ns flasher.times-table
   (:require
    [clojure.test :refer :all]
    [flow-gl.gui.animation :as animation]
@@ -17,8 +17,7 @@
                           y (range 2 10)]
                       {:x x :y y})
                     (filter #(and (some  #{6} [(:x %) (:y %)])
-                                  (<= (:x %)
-                                      (:y %))))
+                                  (<= (:x %) (:y %))))
                     ;;(take 1)
                     ))
 
@@ -127,6 +126,107 @@
                                                           (mod seconds 60)))))))
 
 (def answer-animation-duration 2000)
+(def maximum-duration-in-seconds 5)
+
+;; (defn- score-bar [block column-count state]
+;;   (for [exercise-duration (take-last column-count  (:exercise-durations state))]
+;;     (let [speed-points (speed-points (:duration exercise-duration))]
+;;       (layouts/vertically-2 {:margin 2}
+;;                             (concat (repeat (- 5 speed-points)
+;;                                             (block [0 0 0 0]))
+;;                                     (repeat speed-points
+;;                                             (block (if (:right-answer? exercise-duration)
+;;                                                      [0 80 0 255]
+;;                                                      [80 0 0 255]))))))))
+
+(defn parse-hex-color [hex-color]
+  [(Integer/parseInt (subs hex-color 0 2) 16)
+   (Integer/parseInt (subs hex-color 2 4) 16)
+   (Integer/parseInt (subs hex-color 4 6) 16)
+   255])
+
+(deftest test-parse-hex-color
+  (is (= [121 5 0 255]
+         (parse-hex-color "790500"))))
+
+(defn hsl-to-rgb [h s l]
+  (let [h (float h)
+        s (float s)
+        l (float l)
+
+        c (* (- 1
+                (Math/abs (- (* 2 l)
+                             1)))
+             s)
+
+        x (* c
+             (- 1
+                (Math/abs (- (mod (/ h 60)
+                                  2)
+                             1))))
+        m (- l (/ c 2))
+        [r g b] (cond
+                     (< h 60) [c x 0]
+                     (< h 120) [x c 0]
+                     (< h 180) [0 c x]
+                     (< h 240) [0 x c]
+                     (< h 300) [x 0 c]
+                     :else [c 0 x])]
+    [(int (* 255 (+ r m)))
+     (int (* 255 (+ g m)))
+     (int (* 255 (+ b m)))]))
+
+(defn duration-bar-color [duration-in-seconds & [opacity]]
+  (vec (concat (hsl-to-rgb (animation/linear-mapping (/ (min duration-in-seconds
+                                                             maximum-duration-in-seconds)
+                                                        maximum-duration-in-seconds)
+                                                     110
+                                                     0)
+
+                           1
+                           0.2)
+               [(or opacity
+                    255)])))
+
+(defn- duration-bar [block exercise-duration right-answer?]
+  (let [duration-in-seconds (int (-> (Math/ceil (/ exercise-duration
+                                                   1000))
+                                     (min maximum-duration-in-seconds)))]
+
+    (layouts/vertically-2 {:margin 2}
+                          (concat (repeat (- maximum-duration-in-seconds
+                                             duration-in-seconds)
+                                          (block [0 0 0 0]))
+                                  (repeat duration-in-seconds
+                                          (block (if right-answer?
+                                                   (duration-bar-color duration-in-seconds)
+                                                   (duration-bar-color maximum-duration-in-seconds))))))))
+
+;; (defn- remaining-speed-points-bar [state block]
+;;   (let [remaining-speed-points (speed-points (- (now)
+;;                                                 (:exercise-start-time state)))]
+;;     (when (< 0 remaining-speed-points)
+;;       (animation/swap-state! animation/set-wake-up 100))
+;;     (layouts/vertically-2 {:margin 2}
+;;                           (concat (repeat (- 5 remaining-speed-points)
+;;                                           (block [0 0 0 0]))
+;;                                   (repeat remaining-speed-points
+;;                                           (block [0 80 0 255]))))))
+
+(defn- current-duration-bar [state block]
+  (let [current-duration-in-seconds (Math/ceil (/ (- (now)
+                                                     (:exercise-start-time state))
+                                                  1000))]
+    (when (> maximum-duration-in-seconds current-duration-in-seconds)
+      (animation/swap-state! animation/set-wake-up 100))
+    (layouts/vertically-2 {:margin 2}
+                          (concat (repeat (max 0 (- maximum-duration-in-seconds
+                                                    current-duration-in-seconds))
+                                          (block [0 0 0 0]))
+                                  (repeat (min maximum-duration-in-seconds
+                                               current-duration-in-seconds)
+                                          (block (duration-bar-color current-duration-in-seconds)))))))
+
 
 (defn- game-view  [state]
   (let [finish-phase (or (animation/phase! :finish)
@@ -201,8 +301,9 @@
                                                                                                                                                                                           (:time @animation/state-atom))
                                                                                                                                                                           255)]
                                                                                                                                                             (if (< 0 points)
-                                                                                                                                                              [0 80 0 opacity]
-                                                                                                                                                              [80 0 0 opacity]))))
+                                                                                                                                                              (duration-bar-color 0 opacity)
+                                                                                                                                                              (duration-bar-color maximum-duration-in-seconds
+                                                                                                                                                                                  opacity)))))
                                                                                                                                            (repeat (- maximum-exercise-points
                                                                                                                                                       (abs points))
                                                                                                                                                    (block [0 0 0 0]))))
@@ -247,26 +348,16 @@
                                                                                                       1)))
                                                                                  :end true}
 
+                                                                                ;; (for [n (range 6)]
+                                                                                ;;   (duration-bar block (* n 1000) true))
+
                                                                                 (for [exercise-duration (take-last column-count  (:exercise-durations state))]
-                                                                                  (let [speed-points (speed-points (:duration exercise-duration))]
-                                                                                    (layouts/vertically-2 {:margin 2}
-                                                                                                          (concat (repeat (- 5 speed-points)
-                                                                                                                          (block [0 0 0 0]))
-                                                                                                                  (repeat speed-points
-                                                                                                                          (block (if (:right-answer? exercise-duration)
-                                                                                                                                   [0 80 0 255]
-                                                                                                                                   [80 0 0 255])))))))
+                                                                                  (duration-bar block
+                                                                                                (:duration exercise-duration)
+                                                                                                (:right-answer? exercise-duration)))
                                                                                 (when (and (not (:finished? state))
                                                                                            (not wrong-answer-is-animating?))
-                                                                                  (let [remaining-speed-points (speed-points (- (now)
-                                                                                                                                (:exercise-start-time state)))]
-                                                                                    (when (< 0 remaining-speed-points)
-                                                                                      (animation/swap-state! animation/set-wake-up 100))
-                                                                                    (layouts/vertically-2 {:margin 2}
-                                                                                                          (concat (repeat (- 5 remaining-speed-points)
-                                                                                                                          (block [0 0 0 0]))
-                                                                                                                  (repeat remaining-speed-points
-                                                                                                                          (block [0 80 0 255]))))))))
+                                                                                  (current-duration-bar state block))))
                                                       ;; (scores state)
                                                       )))))
 
