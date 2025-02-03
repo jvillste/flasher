@@ -166,12 +166,12 @@
                              1))))
         m (- l (/ c 2))
         [r g b] (cond
-                     (< h 60) [c x 0]
-                     (< h 120) [x c 0]
-                     (< h 180) [0 c x]
-                     (< h 240) [0 x c]
-                     (< h 300) [x 0 c]
-                     :else [c 0 x])]
+                  (< h 60) [c x 0]
+                  (< h 120) [x c 0]
+                  (< h 180) [0 c x]
+                  (< h 240) [0 x c]
+                  (< h 300) [x 0 c]
+                  :else [c 0 x])]
     [(int (* 255 (+ r m)))
      (int (* 255 (+ g m)))
      (int (* 255 (+ b m)))]))
@@ -494,6 +494,20 @@
   (swap! state-atom assoc :selected-exercises #{}))
 
 
+(defn average-exercise-duration-in-seconds-sorting-value [history exercise]
+  (average-exercise-duration-in-seconds history
+                                        exercise))
+
+
+(defn closest-to-two-seconds-sorting-value [history exercise]
+  (let [average-exercise-duration-in-seconds (average-exercise-duration-in-seconds history
+                                                                                   exercise)]
+    (- maximum-duration-in-seconds
+       (if (> 2 average-exercise-duration-in-seconds)
+         maximum-duration-in-seconds
+         average-exercise-duration-in-seconds))))
+
+
 (defn add-random-exercise [state-atom]
   (swap! state-atom (fn [state]
                       (update state :selected-exercises
@@ -502,8 +516,8 @@
                                                                  (remove (set (:selected-exercises state)))
                                                                  (map (fn [exercise]
                                                                         (assoc exercise
-                                                                               :sorting-value [(Math/round (* 5 (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
-                                                                                                                                                      exercise)))
+                                                                               :sorting-value [(Math/round (float (* 5 (closest-to-two-seconds-sorting-value (get-in state [:players (:player state) :history])
+                                                                                                                                                             exercise))))
 
                                                                                                (rand)])))
                                                                  (sort-by :sorting-value)
