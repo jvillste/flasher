@@ -13,13 +13,29 @@
 
 (def maximum-exercise-points 3)
 
+(defn multiplication-options [right-answer]
+  (->> (repeatedly (fn [] (max 2
+                               (- (+ (inc (rand-int 20))
+                                     right-answer)
+                                  10))))
+       (remove #{right-answer})
+       (distinct)
+       (take 3)
+       (concat [right-answer])
+       (shuffle)))
+
 (def exercises (->> (for [x (range 2 10)
                           y (range 2 10)]
                       {:x x :y y})
-                    (filter #(and (some  #{6} [(:x %) (:y %)])
+                    (filter #(and #_(some  #{6} [(:x %) (:y %)])
                                   (<= (:x %) (:y %))))
                     ;;(take 1)
-                    ))
+                    (map (fn [{:keys [x y]}]
+                           {:questions [(str x " * " y)
+                                        (str y " * " x)]
+                            :related-numbers [x y]
+                            :answer (str (* x y))
+                            :options (vec (map str (multiplication-options (* x y))))}))))
 
 
 (def tekstin-koko 40)
@@ -51,23 +67,10 @@
 (defn initialize-exercise [state exercise]
   (-> state
       (assoc :previous-exercise (:exercise state)
-             :previous-options (:options state)
+             ;;             :previous-options (:options state)
              :exercise-start-time (now)
-             :show-numbers-the-other-way-around? (< 0.5 (rand))
-             :exercise exercise
-             :options (let [right-answer (* (:x exercise)
-                                            (:y exercise))]
-                        (->> (repeatedly (fn [] (max 2
-                                                     (- (+ (inc (rand-int 20))
-                                                           right-answer)
-                                                        10))))
-                             (remove #{right-answer})
-                             (distinct)
-                             (take 3)
-                             (concat [right-answer])
-                             (shuffle))))))
-
-
+             :selected-question (rand-nth (:questions exercise))
+             :exercise exercise)))
 
 (defn next-exercise [state]
   (let [candidates (let [unfinished-exercises (remove (fn [exercise]
@@ -102,17 +105,21 @@
                                    duration)
                                 1000))))))
 
+(defn right-answer? [exercise-duration]
+  (= (:answer (:exercise exercise-duration))
+     (:answer exercise-duration)))
+
 (defn scores [state]
   (animation/swap-state! animation/set-wake-up 1000)
   (layouts/vertically-2 {:margin 10}
                         (teksti (str "Total answer points: " (apply + (vals (:points state)))))
                         (teksti (str "Total speed points: " (apply + (map (comp speed-points :duration)
-                                                                          (filter :right-answer?
+                                                                          (filter right-answer?
                                                                                   (:exercise-durations state))))))
 
-                        (teksti (str "Right answers: " (count (filter :right-answer?
+                        (teksti (str "Right answers: " (count (filter right-answer?
                                                                       (:exercise-durations state)))))
-                        (teksti (str "Wrong answers: " (count (remove :right-answer?
+                        (teksti (str "Wrong answers: " (count (remove right-answer?
                                                                       (:exercise-durations state)))))
                         (teksti (str "Passed execises: " (count (filter #(= % maximum-exercise-points)
                                                                         (vals (:points state))))))
@@ -228,6 +235,113 @@
                                           (block (duration-bar-color current-duration-in-seconds)))))))
 
 
+(defn- options-view [wrong-answer-is-animating? state]
+  (layouts/grid [(map (fn [option]
+                        (layouts/with-margin 10
+                          (teksti option tekstin-koko
+                                  (if wrong-answer-is-animating?
+                                    (let [right-answer (:answer (:exercise state))]
+                                      (cond (= right-answer option)
+                                            [0 150 0 255]
+
+                                            (= (:answer state)
+                                               option)
+                                            [150 0 0 255]
+
+                                            :else
+                                            (:text-color theme)))
+                                    (:text-color theme)))))
+                      (:options (:exercise state)))
+                 (map (fn [anser-key]
+                        (layouts/with-margin 10 (teksti (name anser-key))))
+                      answer-keys)]))
+
+(defn- selected-exercises-points-view [state]
+  (let [exercise-ponts-view (fn [exercise]
+                              (layouts/with-maximum-size 190 nil
+                                (let [points (or (get (:points state)
+                                                      exercise)
+                                                 0)
+                                      row-height 45
+                                      corner-radius 20
+                                      block (fn [fill-color]
+                                              (layouts/box 5
+                                                           (visuals/rectangle-2 :fill-color nil
+                                                                                :draw-color [80 80 80 255]
+                                                                                :line-width 2
+                                                                                :corner-arc-radius corner-radius)
+                                                           (assoc (visuals/rectangle-2 :fill-color fill-color
+                                                                                       :corner-arc-radius corner-radius)
+                                                                  :width 50
+                                                                  :height (- row-height
+                                                                             10))))]
+                                  (layouts/superimpose (layouts/horizontally-2 {:margin 5}
+                                                                               (concat (repeat (abs points)
+                                                                                               (block (let [opacity (if (and (or (animation/animating? @animation/state-atom
+                                                                                                                                                       :right-answer)
+                                                                                                                                 (animation/animating? @animation/state-atom
+                                                                                                                                                       :wrong-answer))
+                                                                                                                             (= (:previous-exercise state)
+                                                                                                                                exercise))
+                                                                                                                      (animation/sine 0 255 0.4
+                                                                                                                                      (:time @animation/state-atom))
+                                                                                                                      255)]
+                                                                                                        (if (< 0 points)
+                                                                                                          (duration-bar-color 0 opacity)
+                                                                                                          (duration-bar-color maximum-duration-in-seconds
+                                                                                                                              opacity)))))
+                                                                                       (repeat (- maximum-exercise-points
+                                                                                                  (abs points))
+                                                                                               (block [0 0 0 0]))))
+                                                       (layouts/with-maximum-size nil row-height
+                                                         (layouts/center (teksti (first (:questions exercise)))))))))]
+    (layouts/horizontally-2 {:margin 50}
+                            (for [exercises-in-column (partition-all (/ (count (:selected-exercises state))
+                                                                        2)
+                                                                     (:selected-exercises state))]
+                              (layouts/vertically-2 {:margin 5 :centered? true}
+                                                    (for [exercise exercises-in-column]
+                                                      (exercise-ponts-view exercise)))))))
+
+(defn- durations-view [state wrong-answer-is-animating?]
+  (let [corner-radius 20
+        column-count (min (if (:finished? state)
+                            1000000
+                            20)
+                          (count (:exercise-durations state)))
+        width (min 50
+                   (/ 1000
+                      (max column-count
+                           1)))
+        block (fn [fill-color]
+                (layouts/box 5
+                             (visuals/rectangle-2 :fill-color nil
+                                                  :draw-color [80 80 80 255]
+                                                  :line-width (if (< width 10)
+                                                                0
+                                                                2)
+                                                  :corner-arc-radius corner-radius)
+                             (assoc (visuals/rectangle-2 :fill-color fill-color
+                                                         :corner-arc-radius corner-radius)
+                                    :width width
+                                    :height 50)))]
+    (layouts/horizontally-2 {:margin (min 5
+                                          (/ 100
+                                             (max column-count
+                                                  1)))
+                             :end true}
+
+                            ;; (for [n (range 6)]
+                            ;;   (duration-bar block (* n 1000) true))
+
+                            (for [exercise-duration (take-last column-count  (:exercise-durations state))]
+                              (duration-bar block
+                                            (:duration exercise-duration)
+                                            (right-answer? exercise-duration)))
+                            (when (and (not (:finished? state))
+                                       (not wrong-answer-is-animating?))
+                              (current-duration-bar state block)))))
+
 (defn- game-view  [state]
   (let [finish-phase (or (animation/phase! :finish)
                          0)
@@ -246,118 +360,11 @@
                               (layouts/with-margin 50
                                 (layouts/vertically-2 {:margin 20 :centered? true}
                                                       (when (not (:finished? state))
-                                                        (let [{:keys [x y]} (:exercise state)]
-                                                          (teksti (if (:show-numbers-the-other-way-around? state)
-                                                                    (str y " * " x)
-                                                                    (str x " * " y)))))
+                                                        (teksti (:selected-question state)))
                                                       (when (not (:finished? state))
-                                                        (layouts/grid [(map (fn [value]
-                                                                              (layouts/with-margin 10
-                                                                                (teksti value tekstin-koko
-                                                                                        (if wrong-answer-is-animating?
-                                                                                          (let [right-answer (* (:x (:exercise state))
-                                                                                                                (:y (:exercise state)))]
-                                                                                            (cond (= right-answer value)
-                                                                                                  [0 150 0 255]
-
-                                                                                                  (= (:previous-answer state)
-                                                                                                     value)
-                                                                                                  [150 0 0 255]
-
-                                                                                                  :else
-                                                                                                  (:text-color theme)))
-                                                                                          (:text-color theme)))))
-                                                                            (:options state))
-                                                                       (map (fn [anser-key]
-                                                                              (layouts/with-margin 10 (teksti (name anser-key))))
-                                                                            answer-keys)]))
-                                                      (let [exercise-ponts-view (fn [exercise]
-                                                                                  (layouts/with-maximum-size 190 nil
-                                                                                    (let [points (or (get (:points state)
-                                                                                                          exercise)
-                                                                                                     0)
-                                                                                          row-height 45
-                                                                                          corner-radius 20
-                                                                                          block (fn [fill-color]
-                                                                                                  (layouts/box 5
-                                                                                                               (visuals/rectangle-2 :fill-color nil
-                                                                                                                                    :draw-color [80 80 80 255]
-                                                                                                                                    :line-width 2
-                                                                                                                                    :corner-arc-radius corner-radius)
-                                                                                                               (assoc (visuals/rectangle-2 :fill-color fill-color
-                                                                                                                                           :corner-arc-radius corner-radius)
-                                                                                                                      :width 50
-                                                                                                                      :height (- row-height
-                                                                                                                                 10))))]
-                                                                                      (layouts/superimpose (layouts/horizontally-2 {:margin 5}
-                                                                                                                                   (concat (repeat (abs points)
-                                                                                                                                                   (block (let [opacity (if (and (or (animation/animating? @animation/state-atom
-                                                                                                                                                                                                           :right-answer)
-                                                                                                                                                                                     (animation/animating? @animation/state-atom
-                                                                                                                                                                                                           :wrong-answer))
-                                                                                                                                                                                 (= (:previous-exercise state)
-                                                                                                                                                                                    exercise))
-                                                                                                                                                                          (animation/sine 0 255 0.4
-                                                                                                                                                                                          (:time @animation/state-atom))
-                                                                                                                                                                          255)]
-                                                                                                                                                            (if (< 0 points)
-                                                                                                                                                              (duration-bar-color 0 opacity)
-                                                                                                                                                              (duration-bar-color maximum-duration-in-seconds
-                                                                                                                                                                                  opacity)))))
-                                                                                                                                           (repeat (- maximum-exercise-points
-                                                                                                                                                      (abs points))
-                                                                                                                                                   (block [0 0 0 0]))))
-                                                                                                           (layouts/with-maximum-size nil row-height
-                                                                                                             (layouts/center (teksti (str (:x exercise) " * " (:y exercise)))))))))]
-                                                        (layouts/horizontally-2 {:margin 50}
-                                                                                (layouts/vertically-2 {:margin 5 :centered? true}
-                                                                                                      (for [exercise (take (/ (count (:selected-exercises state))
-                                                                                                                              2)
-                                                                                                                           (:selected-exercises state))]
-                                                                                                        (exercise-ponts-view exercise)))
-                                                                                (layouts/vertically-2 {:margin 5 :centered? true}
-                                                                                                      (for [exercise (drop (/ (count (:selected-exercises state))
-                                                                                                                              2)
-                                                                                                                           (:selected-exercises state))]
-                                                                                                        (exercise-ponts-view exercise)))))
-
-                                                      (let [corner-radius 20
-                                                            column-count (min (if (:finished? state)
-                                                                                1000000
-                                                                                20)
-                                                                              (count (:exercise-durations state)))
-                                                            width (min 50
-                                                                       (/ 1000
-                                                                          (max column-count
-                                                                               1)))
-                                                            block (fn [fill-color]
-                                                                    (layouts/box 5
-                                                                                 (visuals/rectangle-2 :fill-color nil
-                                                                                                      :draw-color [80 80 80 255]
-                                                                                                      :line-width (if (< width 10)
-                                                                                                                    0
-                                                                                                                    2)
-                                                                                                      :corner-arc-radius corner-radius)
-                                                                                 (assoc (visuals/rectangle-2 :fill-color fill-color
-                                                                                                             :corner-arc-radius corner-radius)
-                                                                                        :width width
-                                                                                        :height 50)))]
-                                                        (layouts/horizontally-2 {:margin (min 5
-                                                                                              (/ 100
-                                                                                                 (max column-count
-                                                                                                      1)))
-                                                                                 :end true}
-
-                                                                                ;; (for [n (range 6)]
-                                                                                ;;   (duration-bar block (* n 1000) true))
-
-                                                                                (for [exercise-duration (take-last column-count  (:exercise-durations state))]
-                                                                                  (duration-bar block
-                                                                                                (:duration exercise-duration)
-                                                                                                (:right-answer? exercise-duration)))
-                                                                                (when (and (not (:finished? state))
-                                                                                           (not wrong-answer-is-animating?))
-                                                                                  (current-duration-bar state block))))
+                                                        (options-view wrong-answer-is-animating? state))
+                                                      (selected-exercises-points-view state)
+                                                      (durations-view state wrong-answer-is-animating?)
                                                       ;; (scores state)
                                                       )))))
 
@@ -424,12 +431,12 @@
         ]
     state))
 
-(def all-exercises (->> (for [x (range 2 10)
-                              y (range 2 10)]
+;; (def all-exercises (->> (for [x (range 2 10)
+;;                               y (range 2 10)]
 
-                          {:x x :y y})
-                        (filter #(<= (:x %)
-                                     (:y %)))))
+;;                           {:x x :y y})
+;;                         (filter #(<= (:x %)
+;;                                      (:y %)))))
 
 (defn button [label fill-color text-color on-click!]
   {:node (layouts/box 10
@@ -449,8 +456,10 @@
                                 (take-last 10))]
     (float (/ (reduce +
                       (map (comp speed-points :duration)
-                           (filter :right-answer? relevant-durations)))
+                           (filter right-answer? relevant-durations)))
               10))))
+
+
 
 (defn average-exercise-duration-in-seconds [durations exercise]
   (let [relevant-durations (->> durations
@@ -461,8 +470,8 @@
     (float (/ (+ (reduce +
                          (map (fn [duration]
                                 (min 5000 (:duration duration)))
-                              (filter :right-answer? relevant-durations)))
-                 (* 5000 (- 10 (count (filter :right-answer? relevant-durations)))))
+                              (filter right-answer? relevant-durations)))
+                 (* 5000 (- 10 (count (filter right-answer? relevant-durations)))))
               10
               1000))))
 
@@ -473,12 +482,10 @@
 
   (is (= 4.5
          (average-exercise-duration-in-seconds [{:exercise {:x 2 :y 2}
-                                                 :right-answer? true
                                                  :duration 0}]
                                                {:x 2 :y 2})))
   (is (= 5.0
          (average-exercise-duration-in-seconds [{:exercise {:x 2 :y 2}
-                                                 :right-answer? true
                                                  :duration 10000}]
                                                {:x 2 :y 2}))))
 
@@ -512,7 +519,7 @@
   (swap! state-atom (fn [state]
                       (update state :selected-exercises
                               set/union
-                              (if-let [new-exercise (dissoc (->> all-exercises
+                              (if-let [new-exercise (dissoc (->> exercises
                                                                  (remove (set (:selected-exercises state)))
                                                                  (map (fn [exercise]
                                                                         (assoc exercise
@@ -577,8 +584,8 @@
                                                                  [150 150 150 255])
                                                                (fn []
                                                                  (swap! state-atom assoc :player player-id)))))
-                             (layouts/grid (for [row (partition-by :x
-                                                                   all-exercises)]
+                             (layouts/grid (for [row (partition-by (comp first :related-numbers)
+                                                                   exercises)]
                                              (for [exercise row]
 
                                                {:node (let [selected? (contains? (:selected-exercises state)
@@ -603,9 +610,9 @@
                                                                                       (format "%.2f" (average-exercise-duration-in-seconds player-history exercise))
 
                                                                                       :right-answer
-                                                                                      (str (* (:x exercise) (:y exercise)))
+                                                                                      (:answer exercise)
 
-                                                                                      (str (:x exercise) " * " (:y exercise) ))
+                                                                                      (first (:questions exercise)))
                                                                                     tekstin-koko
                                                                                     (if selected?
                                                                                       [0 0 0 255]
@@ -613,11 +620,9 @@
                                                 :mouse-event-handler (fn [_node event]
                                                                        (when (= :mouse-clicked (:type event))
                                                                          (let [similar-exercises (filter (fn [available-exercise]
-                                                                                                           (or (= (:x exercise)
-                                                                                                                  (:x available-exercise))
-                                                                                                               (= (:x exercise)
-                                                                                                                  (:y available-exercise))))
-                                                                                                         all-exercises)]
+                                                                                                           (some #{(first (:related-numbers exercise))}
+                                                                                                                 (:related-numbers available-exercise)))
+                                                                                                         exercises)]
                                                                            (swap! state-atom update :selected-exercises (fn [selected-exericses]
                                                                                                                           (if (contains? selected-exericses
                                                                                                                                          exercise)
@@ -636,9 +641,9 @@
                                                                        event)})))
                              (teksti (str "Average duration: " (format "%.2f"
                                                                        (/ (->> (map (partial average-exercise-duration-in-seconds player-history)
-                                                                                    all-exercises)
+                                                                                    exercises)
                                                                                (reduce +))
-                                                                          (count all-exercises)))
+                                                                          (count exercises)))
                                           "s")
                                      60
                                      [50 180 50 255])
@@ -736,10 +741,9 @@
                          answer-keys)
                    (not (animation/animating? @animation/state-atom :wrong-answer answer-animation-duration)))
 
-          (let [answer (get (:options state)
+          (let [answer (get (vec (:options (:exercise state)))
                             (anwser-key-to-option-index (:key event)))
-                right-answer? (= (* (:x (:exercise state))
-                                    (:y (:exercise state)))
+                right-answer? (= (:answer (:exercise state))
                                  answer)
                 state (update-in state
                                  [:points (:exercise state)]
@@ -751,20 +755,20 @@
                                      (-> points
                                          (max (- maximum-exercise-points))
                                          (min maximum-exercise-points)))))
-                state (update state :exercise-durations conj
-                              {:exercise (:exercise state)
-                               :time (now)
-                               :duration (- (now)
-                                            (:exercise-start-time state))
-                               :right-answer? right-answer?})
                 next-exercise (next-exercise state)
                 finished? (not (some? next-exercise))]
-
             (reset! state-atom
                     (-> state
+                        (update :exercise-durations
+                                conj
+                                {:exercise (:exercise state)
+                                 :time (now)
+                                 :duration (- (now)
+                                              (:exercise-start-time state))
+                                 :answer answer})
                         (assoc :finished? finished?
-                               :previous-answer-time (now)
-                               :previous-answer answer)
+                               :answer answer
+                               :previous-answer-time (now))
                         (cond-> (and (some? next-exercise)
                                      right-answer?)
                           (initialize-exercise next-exercise))))
@@ -782,13 +786,13 @@
                     (:points @state-atom))))))))
 
 (defn root-view []
-  (let [state-atom (atom (assoc (read-string (slurp state-file-name))
-                                :state :menu)
-                         #_{:selected-exercises #{}
-                            :state :menu
-                            :players {1 {:name "Lumo"}
-                                      2 {:name "Jukka"}}
-                            :player 1})]
+  (let [state-atom (atom #_(assoc (read-string (slurp state-file-name))
+                                  :state :menu)
+                         {:selected-exercises #{}
+                          :state :menu
+                          :players {1 {:name "Lumo"}
+                                    2 {:name "Jukka"}}
+                          :player 1})]
     (fn []
       (let [state @state-atom]
         (keyboard/set-focused-event-handler! (partial event-handler state-atom))
