@@ -13,7 +13,7 @@
 
 (def maximum-exercise-points 3)
 
-(defn multiplication-options [right-answer]
+(defn number-exercise-options [right-answer]
   (->> (repeatedly (fn [] (max 2
                                (- (+ (inc (rand-int 20))
                                      right-answer)
@@ -24,19 +24,36 @@
        (concat [right-answer])
        (shuffle)))
 
-(def exercises (->> (for [x (range 2 10)
-                          y (range 2 10)]
-                      {:x x :y y})
-                    (filter #(and #_(some  #{6} [(:x %) (:y %)])
-                                  (<= (:x %) (:y %))))
-                    ;;(take 1)
-                    (map (fn [{:keys [x y]}]
-                           {:questions [(str x " * " y)
-                                        (str y " * " x)]
-                            :related-numbers [x y]
-                            :answer (str (* x y))
-                            :options (vec (map str (multiplication-options (* x y))))}))))
+(defn number-exercise-options-using-strings [right-answer-string]
+  (vec (map str (number-exercise-options (Integer/parseInt right-answer-string)))))
 
+(def exercises (distinct (concat (->> (for [x (range 2 10)
+                                            y (range 2 10)]
+                                        {:x x :y y})
+                                      ;;                            (filter #(<= (:x %) (:y %)))
+                                      (map (fn [{:keys [x y]}]
+                                             {:questions [(str x " * " y)
+                                                          ;;(str y " * " x)
+                                                          ]
+                                              :related-numbers [x y]
+                                              :group {:type :multiplication
+                                                      :lower-number (min x y)
+                                                      :higher-number (max x y)}
+                                              :answer (str (* x y))
+                                              :options-function number-exercise-options-using-strings})))
+
+                                 (->> (for [x (range 2 10)
+                                            y (range 2 10)]
+                                        {:x x :y y})
+                                      ;;                            (filter #(<= (:x %) (:y %)))
+                                      (mapcat (fn [{:keys [x y]}]
+                                                [{:questions [(str (* x y) " : " x)]
+                                                  :related-numbers [x y (* x y)]
+                                                  :group {:type :multiplication
+                                                          :lower-number (min x y)
+                                                          :higher-number (max x y)}
+                                                  :answer (str y)
+                                                  :options-function number-exercise-options-using-strings}]))))))
 
 (def tekstin-koko 40)
 
@@ -70,7 +87,9 @@
              ;;             :previous-options (:options state)
              :exercise-start-time (now)
              :selected-question (rand-nth (:questions exercise))
-             :exercise exercise)))
+             :exercise exercise
+             :options ((:options-function exercise)
+                       (:answer exercise)))))
 
 (defn next-exercise [state]
   (let [candidates (let [unfinished-exercises (remove (fn [exercise]
@@ -251,7 +270,7 @@
                                             :else
                                             (:text-color theme)))
                                     (:text-color theme)))))
-                      (:options (:exercise state)))
+                      (:options state))
                  (map (fn [anser-key]
                         (layouts/with-margin 10 (teksti (name anser-key))))
                       answer-keys)]))
@@ -620,8 +639,10 @@
                                                 :mouse-event-handler (fn [_node event]
                                                                        (when (= :mouse-clicked (:type event))
                                                                          (let [similar-exercises (filter (fn [available-exercise]
-                                                                                                           (some #{(first (:related-numbers exercise))}
-                                                                                                                 (:related-numbers available-exercise)))
+                                                                                                           #_(some #{(first (:related-numbers exercise))}
+                                                                                                                   (:related-numbers available-exercise))
+                                                                                                           (= (:group available-exercise)
+                                                                                                              (:group exercise)))
                                                                                                          exercises)]
                                                                            (swap! state-atom update :selected-exercises (fn [selected-exericses]
                                                                                                                           (if (contains? selected-exericses
@@ -741,7 +762,7 @@
                          answer-keys)
                    (not (animation/animating? @animation/state-atom :wrong-answer answer-animation-duration)))
 
-          (let [answer (get (vec (:options (:exercise state)))
+          (let [answer (get (vec (:options state))
                             (anwser-key-to-option-index (:key event)))
                 right-answer? (= (:answer (:exercise state))
                                  answer)
