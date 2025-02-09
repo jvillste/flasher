@@ -538,23 +538,36 @@
          maximum-duration-in-seconds
          average-exercise-duration-in-seconds))))
 
+(defn random-exercise [state]
+  (dissoc (->> exercises
+               (remove (set (:selected-exercises state)))
+               (map (fn [exercise]
+                      (assoc exercise
+                             :sorting-value [(Math/round (float (* 5 (closest-to-two-seconds-sorting-value (get-in state [:players (:player state) :history])
+                                                                                                           exercise))))
+
+                                             (rand)])))
+               (sort-by :sorting-value)
+               (last))
+          :sorting-value))
 
 (defn add-random-exercise [state-atom]
   (swap! state-atom (fn [state]
                       (update state :selected-exercises
                               set/union
-                              (if-let [new-exercise (dissoc (->> exercises
-                                                                 (remove (set (:selected-exercises state)))
-                                                                 (map (fn [exercise]
-                                                                        (assoc exercise
-                                                                               :sorting-value [(Math/round (float (* 5 (closest-to-two-seconds-sorting-value (get-in state [:players (:player state) :history])
-                                                                                                                                                             exercise))))
-
-                                                                                               (rand)])))
-                                                                 (sort-by :sorting-value)
-                                                                 (last))
-                                                            :sorting-value)]
+                              (if-let [new-exercise (random-exercise state)]
                                 #{new-exercise}
+                                #{})))))
+
+(defn add-random-exercise-group [state-atom]
+  (swap! state-atom (fn [state]
+                      (update state :selected-exercises
+                              set/union
+                              (if-let [new-exercise (random-exercise state)]
+                                (->> exercises
+                                     (filter (comp #{(:group new-exercise)}
+                                                   :group))
+                                     (into #{}))
                                 #{})))))
 
 (defn toggle-average-druation [state-atom]
@@ -747,10 +760,15 @@
 
       (when (and (= :key-pressed (:type event))
                  (= :r (:key event)))
-        (if (:shift? event)
-          (doseq [_ (range 5)]
-            (add-random-exercise state-atom))
-          (add-random-exercise state-atom)))
+        (cond (:shift? event)
+              (doseq [_ (range 5)]
+                (add-random-exercise state-atom))
+
+              (:meta? event)
+              (add-random-exercise-group state-atom)
+
+              :else
+              (add-random-exercise state-atom)))
 
       (when (and (= :key-pressed (:type event))
                  (= :tab (:key event)))
