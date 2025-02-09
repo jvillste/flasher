@@ -154,16 +154,15 @@
 (def answer-animation-duration 2000)
 (def maximum-duration-in-seconds 5)
 
-;; (defn- score-bar [block column-count state]
-;;   (for [exercise-duration (take-last column-count  (:exercise-durations state))]
-;;     (let [speed-points (speed-points (:duration exercise-duration))]
-;;       (layouts/vertically-2 {:margin 2}
-;;                             (concat (repeat (- 5 speed-points)
-;;                                             (block [0 0 0 0]))
-;;                                     (repeat speed-points
-;;                                             (block (if (:right-answer? exercise-duration)
-;;                                                      [0 80 0 255]
-;;                                                      [80 0 0 255]))))))))
+(defn- score-bar [block duration right-answer?]
+  (let [speed-points (speed-points duration)]
+    (layouts/vertically-2 {:margin 2}
+                          (concat (repeat (- 5 speed-points)
+                                          (block [0 0 0 0]))
+                                  (repeat speed-points
+                                          (block (if right-answer?
+                                                   [0 80 0 255]
+                                                   [80 0 0 255])))))))
 
 (defn parse-hex-color [hex-color]
   [(Integer/parseInt (subs hex-color 0 2) 16)
@@ -228,16 +227,16 @@
                                                    (duration-bar-color duration-in-seconds)
                                                    (duration-bar-color maximum-duration-in-seconds))))))))
 
-;; (defn- remaining-speed-points-bar [state block]
-;;   (let [remaining-speed-points (speed-points (- (now)
-;;                                                 (:exercise-start-time state)))]
-;;     (when (< 0 remaining-speed-points)
-;;       (animation/swap-state! animation/set-wake-up 100))
-;;     (layouts/vertically-2 {:margin 2}
-;;                           (concat (repeat (- 5 remaining-speed-points)
-;;                                           (block [0 0 0 0]))
-;;                                   (repeat remaining-speed-points
-;;                                           (block [0 80 0 255]))))))
+(defn- remaining-speed-points-bar [state block]
+  (let [remaining-speed-points (speed-points (- (now)
+                                                (:exercise-start-time state)))]
+    (when (< 0 remaining-speed-points)
+      (animation/swap-state! animation/set-wake-up 100))
+    (layouts/vertically-2 {:margin 2}
+                          (concat (repeat (- 5 remaining-speed-points)
+                                          (block [0 0 0 0]))
+                                  (repeat remaining-speed-points
+                                          (block [0 80 0 255]))))))
 
 (defn- current-duration-bar [state block]
   (let [current-duration-in-seconds (Math/ceil (/ (- (now)
@@ -354,12 +353,18 @@
                             ;;   (duration-bar block (* n 1000) true))
 
                             (for [exercise-duration (take-last column-count  (:exercise-durations state))]
-                              (duration-bar block
-                                            (:duration exercise-duration)
-                                            (right-answer? exercise-duration)))
+                              (if (:show-duration-bars? state)
+                                (duration-bar block
+                                              (:duration exercise-duration)
+                                              (right-answer? exercise-duration))
+                                (score-bar block
+                                           (:duration exercise-duration)
+                                           (right-answer? exercise-duration))))
                             (when (and (not (:finished? state))
                                        (not wrong-answer-is-animating?))
-                              (current-duration-bar state block)))))
+                              (if (:show-duration-bars? state)
+                                (current-duration-bar state block)
+                                (remaining-speed-points-bar state block))))))
 
 (defn- game-view  [state]
   (let [finish-phase (or (animation/phase! :finish)
@@ -757,10 +762,10 @@
         (do (animation/swap-state! animation/delete :finish)
             (swap! state-atom save-game)
             (swap! state-atom assoc :state :menu))
-        (when (and (= :key-pressed (:type event))
-                   (some #{(:key event)}
-                         answer-keys)
-                   (not (animation/animating? @animation/state-atom :wrong-answer answer-animation-duration)))
+        (if (and (= :key-pressed (:type event))
+                 (some #{(:key event)}
+                       answer-keys)
+                 (not (animation/animating? @animation/state-atom :wrong-answer answer-animation-duration)))
 
           (let [answer (get (vec (:options state))
                             (anwser-key-to-option-index (:key event)))
@@ -804,7 +809,10 @@
                     (animation/swap-state! animation/start :wrong-answer answer-animation-duration))))
 
             (reset! points-atom
-                    (:points @state-atom))))))))
+                    (:points @state-atom)))
+          (when (and (= :key-pressed (:type event))
+                     (= :p (:key event)))
+            (swap! state-atom update :show-duration-bars? not)))))))
 
 (defn root-view []
   (let [state-atom (atom #_(assoc (read-string (slurp state-file-name))
