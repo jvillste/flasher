@@ -32,9 +32,7 @@
                                         {:x x :y y})
                                       ;;                            (filter #(<= (:x %) (:y %)))
                                       (map (fn [{:keys [x y]}]
-                                             {:questions [(str x " * " y)
-                                                          ;;(str y " * " x)
-                                                          ]
+                                             {:question (str x " * " y)
                                               :related-numbers [x y]
                                               :group {:type :multiplication
                                                       :lower-number (min x y)
@@ -47,7 +45,7 @@
                                         {:x x :y y})
                                       ;;                            (filter #(<= (:x %) (:y %)))
                                       (mapcat (fn [{:keys [x y]}]
-                                                [{:questions [(str (* x y) " : " x)]
+                                                [{:question (str (* x y) " : " x)
                                                   :related-numbers [x y (* x y)]
                                                   :group {:type :multiplication
                                                           :lower-number (min x y)
@@ -86,7 +84,6 @@
       (assoc :previous-exercise (:exercise state)
              ;;             :previous-options (:options state)
              :exercise-start-time (now)
-             :selected-question (rand-nth (:questions exercise))
              :exercise exercise
              :options ((:options-function exercise)
                        (:answer exercise)))))
@@ -312,7 +309,7 @@
                                                                                                   (abs points))
                                                                                                (block [0 0 0 0]))))
                                                        (layouts/with-maximum-size nil row-height
-                                                         (layouts/center (teksti (first (:questions exercise)))))))))]
+                                                         (layouts/center (teksti (:question exercise))))))))]
     (layouts/horizontally-2 {:margin 50}
                             (for [exercises-in-column (partition-all (/ (count (:selected-exercises state))
                                                                         2)
@@ -384,7 +381,7 @@
                               (layouts/with-margin 50
                                 (layouts/vertically-2 {:margin 20 :centered? true}
                                                       (when (not (:finished? state))
-                                                        (teksti (:selected-question state)))
+                                                        (teksti (:question (:exercise state))))
                                                       (when (not (:finished? state))
                                                         (options-view wrong-answer-is-animating? state))
                                                       (selected-exercises-points-view state)
@@ -649,7 +646,7 @@
                                                                                       :right-answer
                                                                                       (:answer exercise)
 
-                                                                                      (first (:questions exercise)))
+                                                                                      (:question exercise))
                                                                                     tekstin-koko
                                                                                     (if selected?
                                                                                       [0 0 0 255]
@@ -832,9 +829,18 @@
                      (= :p (:key event)))
             (swap! state-atom update :show-duration-bars? not)))))))
 
+(comment
+  (spit state-file-name
+        {:selected-exercises #{}
+         :state :menu
+         :players {1 {:name "Lumo"}
+                   2 {:name "Jukka"}}
+         :player 1})
+  )
+
 (defn root-view []
   (let [state-atom (atom #_(assoc (read-string (slurp state-file-name))
-                                  :state :menu)
+                                :state :menu)
                          {:selected-exercises #{}
                           :state :menu
                           :players {1 {:name "Lumo"}
