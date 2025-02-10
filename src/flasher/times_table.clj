@@ -27,31 +27,52 @@
 (defn number-exercise-options-using-strings [right-answer-string]
   (vec (map str (number-exercise-options (Integer/parseInt right-answer-string)))))
 
-(def exercises (distinct (concat (->> (for [x (range 2 10)
-                                            y (range 2 10)]
-                                        {:x x :y y})
-                                      ;;                            (filter #(<= (:x %) (:y %)))
-                                      (map (fn [{:keys [x y]}]
-                                             {:question (str x " * " y)
-                                              :related-numbers [x y]
-                                              :group {:type :multiplication
-                                                      :lower-number (min x y)
-                                                      :higher-number (max x y)}
-                                              :answer (str (* x y))
-                                              :options-function number-exercise-options-using-strings})))
+(defn multiplication-attributes [{:keys [x y]}]
+  {:question (str x " * " y)
+   :related-numbers [x y]
+   :group {:type :multiplication
+           :lower-number (min x y)
+           :higher-number (max x y)}
+   :answer (str (* x y))
+   :options-function number-exercise-options-using-strings})
 
-                                 (->> (for [x (range 2 10)
-                                            y (range 2 10)]
-                                        {:x x :y y})
-                                      ;;                            (filter #(<= (:x %) (:y %)))
-                                      (mapcat (fn [{:keys [x y]}]
-                                                [{:question (str (* x y) " : " x)
-                                                  :related-numbers [x y (* x y)]
-                                                  :group {:type :multiplication
-                                                          :lower-number (min x y)
-                                                          :higher-number (max x y)}
-                                                  :answer (str y)
-                                                  :options-function number-exercise-options-using-strings}]))))))
+(defn division-attributes [{:keys [x y]}]
+  {:question (str (* x y) " : " x)
+   :related-numbers [x y]
+   :group {:type :multiplication
+           :lower-number (min x y)
+           :higher-number (max x y)}
+   :answer (str y)
+   :options-function number-exercise-options-using-strings})
+
+(def exercise-functions {:multiplication multiplication-attributes
+                         :division division-attributes})
+
+(defn operation-to-exercise [operation]
+  ((get exercise-functions
+        (:type operation))
+   operation))
+
+(def exercises (->> (concat (for [x (range 2 10)
+                                  y (range 2 10)]
+                              {:type :multiplication
+                               :x x
+                               :y y})
+                            (for [x (range 2 10)
+                                  y (range 2 10)]
+
+                              {:type :division
+                               :x x
+                               :y y}))))
+
+(def exercise-attributes (->> exercises
+                              (map (fn [exercise]
+                                     [exercise
+                                      (assoc (case (:type exercise)
+                                               :multiplication (multiplication-attributes exercise)
+                                               :division (division-attributes exercise))
+                                             :exercise exercise)]))
+                              (into {})))
 
 (def tekstin-koko 40)
 
@@ -85,8 +106,8 @@
              ;;             :previous-options (:options state)
              :exercise-start-time (now)
              :exercise exercise
-             :options ((:options-function exercise)
-                       (:answer exercise)))))
+             :options ((:options-function (exercise-attributes exercise))
+                       (:answer (exercise-attributes exercise))))))
 
 (defn next-exercise [state]
   (let [candidates (let [unfinished-exercises (remove (fn [exercise]
@@ -122,7 +143,7 @@
                                 1000))))))
 
 (defn right-answer? [exercise-duration]
-  (= (:answer (:exercise exercise-duration))
+  (= (:answer (exercise-attributes (:exercise exercise-duration)))
      (:answer exercise-duration)))
 
 (defn scores [state]
@@ -255,7 +276,7 @@
                         (layouts/with-margin 10
                           (teksti option tekstin-koko
                                   (if wrong-answer-is-animating?
-                                    (let [right-answer (:answer (:exercise state))]
+                                    (let [right-answer (:answer (exercise-attributes (:exercise state)))]
                                       (cond (= right-answer option)
                                             [0 150 0 255]
 
@@ -309,7 +330,7 @@
                                                                                                   (abs points))
                                                                                                (block [0 0 0 0]))))
                                                        (layouts/with-maximum-size nil row-height
-                                                         (layouts/center (teksti (:question exercise))))))))]
+                                                         (layouts/center (teksti (:question (exercise-attributes exercise)))))))))]
     (layouts/horizontally-2 {:margin 50}
                             (for [exercises-in-column (partition-all (/ (count (:selected-exercises state))
                                                                         2)
@@ -381,7 +402,7 @@
                               (layouts/with-margin 50
                                 (layouts/vertically-2 {:margin 20 :centered? true}
                                                       (when (not (:finished? state))
-                                                        (teksti (:question (:exercise state))))
+                                                        (teksti (:question (exercise-attributes (:exercise state)))))
                                                       (when (not (:finished? state))
                                                         (options-view wrong-answer-is-animating? state))
                                                       (selected-exercises-points-view state)
@@ -562,8 +583,9 @@
                               set/union
                               (if-let [new-exercise (random-exercise state)]
                                 (->> exercises
-                                     (filter (comp #{(:group new-exercise)}
-                                                   :group))
+                                     (filter (comp #{(:group (exercise-attributes new-exercise))}
+                                                   :group
+                                                   exercise-attributes))
                                      (into #{}))
                                 #{})))))
 
@@ -619,18 +641,18 @@
                                                                (fn []
                                                                  (swap! state-atom assoc :player player-id)))))
                              (layouts/grid (for [row (partition-by (comp first :related-numbers)
-                                                                   exercises)]
-                                             (for [exercise row]
+                                                                   (map exercise-attributes exercises))]
+                                             (for [attributes row]
 
                                                {:node (let [selected? (contains? (:selected-exercises state)
-                                                                                 exercise)]
+                                                                                 (:exercise attributes))]
                                                         (layouts/with-margin 5
                                                           (layouts/box 5
                                                                        (visuals/rectangle-2 :fill-color (if selected?
                                                                                                           [50 180 50 255]
                                                                                                           [0 0 (* (max 0
                                                                                                                        (min 1
-                                                                                                                            (/ (- 5 (average-exercise-duration-in-seconds player-history exercise))
+                                                                                                                            (/ (- 5 (average-exercise-duration-in-seconds player-history (:exercise attributes)))
                                                                                                                                5)))
                                                                                                                   255)
                                                                                                            255])
@@ -641,12 +663,12 @@
                                                                             (teksti (case (:exercise-rendering state)
 
                                                                                       :average-duration
-                                                                                      (format "%.2f" (average-exercise-duration-in-seconds player-history exercise))
+                                                                                      (format "%.2f" (average-exercise-duration-in-seconds player-history (:exercise attributes)))
 
                                                                                       :right-answer
-                                                                                      (:answer exercise)
+                                                                                      (:answer attributes)
 
-                                                                                      (:question exercise))
+                                                                                      (:question attributes))
                                                                                     tekstin-koko
                                                                                     (if selected?
                                                                                       [0 0 0 255]
@@ -654,26 +676,26 @@
                                                 :mouse-event-handler (fn [_node event]
                                                                        (when (= :mouse-clicked (:type event))
                                                                          (let [similar-exercises (filter (fn [available-exercise]
-                                                                                                           #_(some #{(first (:related-numbers exercise))}
+                                                                                                           #_(some #{(first (:related-numbers attributes))}
                                                                                                                    (:related-numbers available-exercise))
-                                                                                                           (= (:group available-exercise)
-                                                                                                              (:group exercise)))
+                                                                                                           (= (:group (exercise-attributes available-exercise))
+                                                                                                              (:group attributes)))
                                                                                                          exercises)]
                                                                            (swap! state-atom update :selected-exercises (fn [selected-exericses]
                                                                                                                           (if (contains? selected-exericses
-                                                                                                                                         exercise)
+                                                                                                                                         (:exercise attributes))
                                                                                                                             (if (:shift event)
                                                                                                                               (apply disj
                                                                                                                                      selected-exericses
                                                                                                                                      similar-exercises)
                                                                                                                               (disj selected-exericses
-                                                                                                                                    exercise))
+                                                                                                                                    (:exercise attributes)))
                                                                                                                             (if (:shift event)
                                                                                                                               (apply conj
                                                                                                                                      selected-exericses
                                                                                                                                      similar-exercises)
                                                                                                                               (conj selected-exericses
-                                                                                                                                    exercise)))))))
+                                                                                                                                    (:exercise attributes))))))))
                                                                        event)})))
                              (teksti (str "Average duration: " (format "%.2f"
                                                                        (/ (->> (map (partial average-exercise-duration-in-seconds player-history)
@@ -784,7 +806,7 @@
 
           (let [answer (get (vec (:options state))
                             (anwser-key-to-option-index (:key event)))
-                right-answer? (= (:answer (:exercise state))
+                right-answer? (= (:answer (exercise-attributes (:exercise state)))
                                  answer)
                 state (update-in state
                                  [:points (:exercise state)]
@@ -829,23 +851,20 @@
                      (= :p (:key event)))
             (swap! state-atom update :show-duration-bars? not)))))))
 
+(def initial-state {:selected-exercises #{}
+                    :state :menu
+                    :players {1 {:name "Lumo"}
+                              2 {:name "Jukka"}}
+                    :player 1})
 (comment
   (spit state-file-name
-        {:selected-exercises #{}
-         :state :menu
-         :players {1 {:name "Lumo"}
-                   2 {:name "Jukka"}}
-         :player 1})
+        initial-state)
   )
 
 (defn root-view []
-  (let [state-atom (atom #_(assoc (read-string (slurp state-file-name))
+  (let [state-atom (atom (assoc (read-string (slurp state-file-name))
                                 :state :menu)
-                         {:selected-exercises #{}
-                          :state :menu
-                          :players {1 {:name "Lumo"}
-                                    2 {:name "Jukka"}}
-                          :player 1})]
+                         #_initial-state)]
     (fn []
       (let [state @state-atom]
         (keyboard/set-focused-event-handler! (partial event-handler state-atom))
