@@ -12,3 +12,4 @@ pom.xml.asc
 .hgignore
 .hg/
 /times-table-state.edn
+/.DS_Store
