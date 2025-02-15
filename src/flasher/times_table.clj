@@ -1,4 +1,5 @@
 (ns flasher.times-table
+  (:gen-class)
   (:require
    [clojure.test :refer :all]
    [flow-gl.gui.animation :as animation]
@@ -9,7 +10,10 @@
    [flow-gl.graphics.font :as font]
    [clojure.core.async :as async]
    [clojure.set :as set]
-   [medley.core :as medley]))
+   [medley.core :as medley]
+   [clojure.java.io :as io])
+  (:import java.io.File
+           java.awt.Font))
 
 (def maximum-exercise-points 3)
 
@@ -76,8 +80,6 @@
 
 (def tekstin-koko 40)
 
-;; (def font (font/create-by-name "Serif" tekstin-koko))
-
 (def dark-theme {:text-color [150 150 150 255]
                  :background-color [0 0 0 255]
                  :button-color [0 0 0 255]
@@ -87,15 +89,20 @@
                   :background-color [255 255 255 255]
                   :button-color [200 200 255 255]
                   :event-description-color [10 60 10]})
+
 (def theme dark-theme)
 
-(defn teksti [teksti & [koko väri]]
+(def font (font/create-by-name "Dialog"
+                               40)
+  #_(font/built-in-font {:name :dialog-input
+                                 :size 40}))
+
+(defn teksti [teksti & [_koko väri]]
   (visuals/text-area (str teksti)
                      (if väri
                        väri
                        (:text-color theme))
-                     (font/create-by-name "Serif" (or koko tekstin-koko))
-                     #_(visuals/liberation-sans-regular (or koko tekstin-koko))))
+                     font))
 
 (defn now []
   (System/currentTimeMillis))
@@ -856,15 +863,17 @@
                     :players {1 {:name "Lumo"}
                               2 {:name "Jukka"}}
                     :player 1})
+
 (comment
   (spit state-file-name
         initial-state)
   )
 
 (defn root-view []
-  (let [state-atom (atom (assoc (read-string (slurp state-file-name))
-                                :state :menu)
-                         #_initial-state)]
+  (let [state-atom (atom (if (.exists (File. state-file-name))
+                              (assoc (read-string (slurp state-file-name))
+                                     :state :menu)
+                              initial-state))]
     (fn []
       (let [state @state-atom]
         (keyboard/set-focused-event-handler! (partial event-handler state-atom))
@@ -882,6 +891,8 @@
           (application/start-application #'root-view
                                          :on-exit #(reset! event-channel-atom nil))))
 
+(defn -main []
+  (start))
 
 (when @event-channel-atom
   (async/>!! @event-channel-atom
