@@ -1,19 +1,19 @@
 (ns flasher.times-table
   (:gen-class)
   (:require
+   [clojure.core.async :as async]
+   [clojure.set :as set]
    [clojure.test :refer :all]
+   [flow-gl.graphics.font :as font]
    [flow-gl.gui.animation :as animation]
    [flow-gl.gui.keyboard :as keyboard]
    [flow-gl.gui.visuals :as visuals]
    [fungl.application :as application]
+   [fungl.dependable-atom :as dependable-atom]
    [fungl.layouts :as layouts]
-   [flow-gl.graphics.font :as font]
-   [clojure.core.async :as async]
-   [clojure.set :as set]
-   [medley.core :as medley]
-   [clojure.java.io :as io])
-  (:import java.io.File
-           java.awt.Font))
+   [medley.core :as medley])
+  (:import
+   (java.io File)))
 
 (def maximum-exercise-points 3)
 
@@ -92,10 +92,8 @@
 
 (def theme dark-theme)
 
-(def font (font/create-by-name "Dialog"
-                               40)
-  #_(font/built-in-font {:name :dialog-input
-                                 :size 40}))
+(def font (font/built-in-font {:name :dialog-input
+                               :size 40}))
 
 (defn teksti [teksti & [_koko väri]]
   (visuals/text-area (str teksti)
@@ -630,116 +628,123 @@
   (swap! state-atom assoc :player (first (remove #{(:player @state-atom)}
                                                  (sort (keys (:players @state-atom)))))))
 
+(defn- buttons-view [state-atom selected-excercises-are-empty?]
+  (layouts/horizontally-2 {:margin 10}
+                          [button "Clear selection (e)"
+                           [50 50 50 255]
+                           [180 180 180 255]
+                           (fn []
+                             (clear-selected-exercises state-atom))]
+                          [button "Add random (r)"
+                           [50 50 50 255]
+                           [180 180 180 255]
+                           (fn []
+                             (add-random-exercise state-atom))]
+                          [button "Toggle average duration (x)"
+                           [50 50 50 255]
+                           [180 180 180 255]
+                           (fn []
+                             (toggle-average-druation state-atom))]
+
+                          [button "Toggle right answer (g)"
+                           [50 50 50 255]
+                           [180 180 180 255]
+                           (fn []
+                             (toggle-right-answer state-atom))]
+                          [button "Play! (space)"
+                           [50 50 50 255]
+                           (if selected-excercises-are-empty?
+                             [100 100 100 255]
+                             [180 180 180 255])
+                           (fn [] (start-game state-atom))]))
+
 (defn menu-view [state-atom]
   (let [state @state-atom
         player-history (get-in state [:players (:player state) :history])]
-    (layouts/with-margin 50
-      (layouts/center-horizontally
-       (layouts/vertically-2 {:margin 50 :centered? true}
-                             (layouts/horizontally-2 {:margin 20}
-                                                     (for [player-id (keys (:players state))]
-                                                       (button (get-in state [:players player-id :name])
-                                                               (if (= player-id (:player state))
-                                                                 [50 180 50 255]
-                                                                 [10 10 10 255])
-                                                               (if (= player-id (:player state))
-                                                                 [0 0 0 255]
-                                                                 [150 150 150 255])
-                                                               (fn []
-                                                                 (swap! state-atom assoc :player player-id)))))
-                             (layouts/grid (for [row (partition-by (comp first :related-numbers)
-                                                                   (map exercise-attributes exercises))]
-                                             (for [attributes row]
-
-                                               {:node (let [selected? (contains? (:selected-exercises state)
-                                                                                 (:exercise attributes))]
-                                                        (layouts/with-margin 5
-                                                          (layouts/box 5
-                                                                       (visuals/rectangle-2 :fill-color (if selected?
-                                                                                                          [50 180 50 255]
-                                                                                                          [0 0 (* (max 0
-                                                                                                                       (min 1
-                                                                                                                            (/ (- 5 (average-exercise-duration-in-seconds player-history (:exercise attributes)))
-                                                                                                                               5)))
-                                                                                                                  255)
-                                                                                                           255])
-                                                                                            :corner-arc-radius 20)
-                                                                       (layouts/with-minimum-size 100 nil
-                                                                         (layouts/with-maximum-size 100 nil
-                                                                           (layouts/center-horizontally
-                                                                            (teksti (case (:exercise-rendering state)
-
-                                                                                      :average-duration
-                                                                                      (format "%.2f" (average-exercise-duration-in-seconds player-history (:exercise attributes)))
-
-                                                                                      :right-answer
-                                                                                      (:answer attributes)
-
-                                                                                      (:question attributes))
-                                                                                    tekstin-koko
-                                                                                    (if selected?
+    (layouts/center-horizontally
+     (layouts/with-margin 0
+       (layouts/superimpose (visuals/rectangle-2 :fill-color
+                                                 (:background-color theme))
+                            (layouts/vertically-2 {:margin 50 :centered? true}
+                                                  (layouts/horizontally-2 {:margin 20}
+                                                                          (for [player-id (keys (:players state))]
+                                                                            (button (get-in state [:players player-id :name])
+                                                                                    (if (= player-id (:player state))
+                                                                                      [50 180 50 255]
+                                                                                      [10 10 10 255])
+                                                                                    (if (= player-id (:player state))
                                                                                       [0 0 0 255]
-                                                                                      [200 200 200 255]))))))))
-                                                :mouse-event-handler (fn [_node event]
-                                                                       (when (= :mouse-clicked (:type event))
-                                                                         (let [similar-exercises (filter (fn [available-exercise]
-                                                                                                           #_(some #{(first (:related-numbers attributes))}
-                                                                                                                   (:related-numbers available-exercise))
-                                                                                                           (= (:group (exercise-attributes available-exercise))
-                                                                                                              (:group attributes)))
-                                                                                                         exercises)]
-                                                                           (swap! state-atom update :selected-exercises (fn [selected-exericses]
-                                                                                                                          (if (contains? selected-exericses
-                                                                                                                                         (:exercise attributes))
-                                                                                                                            (if (:shift event)
-                                                                                                                              (apply disj
-                                                                                                                                     selected-exericses
-                                                                                                                                     similar-exercises)
-                                                                                                                              (disj selected-exericses
-                                                                                                                                    (:exercise attributes)))
-                                                                                                                            (if (:shift event)
-                                                                                                                              (apply conj
-                                                                                                                                     selected-exericses
-                                                                                                                                     similar-exercises)
-                                                                                                                              (conj selected-exericses
-                                                                                                                                    (:exercise attributes))))))))
-                                                                       event)})))
-                             (teksti (str "Average duration: " (format "%.2f"
-                                                                       (/ (->> (map (partial average-exercise-duration-in-seconds player-history)
-                                                                                    exercises)
-                                                                               (reduce +))
-                                                                          (count exercises)))
-                                          "s")
-                                     60
-                                     [50 180 50 255])
-                             (layouts/horizontally-2 {:margin 10}
-                                                     [button "Clear selection (e)"
-                                                      [50 50 50 255]
-                                                      [180 180 180 255]
-                                                      (fn []
-                                                        (clear-selected-exercises state-atom))]
-                                                     [button "Add random (r)"
-                                                      [50 50 50 255]
-                                                      [180 180 180 255]
-                                                      (fn []
-                                                        (add-random-exercise state-atom))]
-                                                     [button "Toggle average duration (x)"
-                                                      [50 50 50 255]
-                                                      [180 180 180 255]
-                                                      (fn []
-                                                        (toggle-average-druation state-atom))]
+                                                                                      [150 150 150 255])
+                                                                                    (fn []
+                                                                                      (swap! state-atom assoc :player player-id)))))
+                                                  (layouts/grid (for [row (partition-by (comp first :related-numbers)
+                                                                                        (map exercise-attributes exercises))]
+                                                                  (for [attributes row]
 
-                                                     [button "Toggle right answer (g)"
-                                                      [50 50 50 255]
-                                                      [180 180 180 255]
-                                                      (fn []
-                                                        (toggle-right-answer state-atom))]
-                                                     [button "Play! (space)"
-                                                      [50 50 50 255]
-                                                      (if (empty? (:selected-exercises @state-atom))
-                                                        [100 100 100 255]
-                                                        [180 180 180 255])
-                                                      (fn [] (start-game state-atom))]))))))
+                                                                    {:node (let [selected? (contains? (:selected-exercises state)
+                                                                                                      (:exercise attributes))]
+                                                                             (layouts/with-margin 5
+                                                                               (layouts/box 5
+                                                                                            (visuals/rectangle-2 :fill-color (if selected?
+                                                                                                                               [50 180 50 255]
+                                                                                                                               [0 0 (* (max 0
+                                                                                                                                            (min 1
+                                                                                                                                                 (/ (- 5 (average-exercise-duration-in-seconds player-history (:exercise attributes)))
+                                                                                                                                                    5)))
+                                                                                                                                       255)
+                                                                                                                                255])
+                                                                                                                 :corner-arc-radius 20)
+                                                                                            (layouts/with-minimum-size 150 nil
+                                                                                              (layouts/with-maximum-size 150 nil
+                                                                                                (layouts/center-horizontally
+                                                                                                 (teksti (case (:exercise-rendering state)
+
+                                                                                                           :average-duration
+                                                                                                           (format "%.2f" (average-exercise-duration-in-seconds player-history (:exercise attributes)))
+
+                                                                                                           :right-answer
+                                                                                                           (:answer attributes)
+
+                                                                                                           (:question attributes))
+                                                                                                         tekstin-koko
+                                                                                                         (if selected?
+                                                                                                           [0 0 0 255]
+                                                                                                           [200 200 200 255]))))))))
+                                                                     :mouse-event-handler (fn [_node event]
+                                                                                            (when (= :mouse-clicked (:type event))
+                                                                                              (let [similar-exercises (filter (fn [available-exercise]
+                                                                                                                                #_(some #{(first (:related-numbers attributes))}
+                                                                                                                                        (:related-numbers available-exercise))
+                                                                                                                                (= (:group (exercise-attributes available-exercise))
+                                                                                                                                   (:group attributes)))
+                                                                                                                              exercises)]
+                                                                                                (swap! state-atom update :selected-exercises (fn [selected-exericses]
+                                                                                                                                               (if (contains? selected-exericses
+                                                                                                                                                              (:exercise attributes))
+                                                                                                                                                 (if (:shift event)
+                                                                                                                                                   (apply disj
+                                                                                                                                                          selected-exericses
+                                                                                                                                                          similar-exercises)
+                                                                                                                                                   (disj selected-exericses
+                                                                                                                                                         (:exercise attributes)))
+                                                                                                                                                 (if (:shift event)
+                                                                                                                                                   (apply conj
+                                                                                                                                                          selected-exericses
+                                                                                                                                                          similar-exercises)
+                                                                                                                                                   (conj selected-exericses
+                                                                                                                                                         (:exercise attributes))))))))
+                                                                                            event)})))
+
+
+                                                  (teksti (str "Average duration: " (format "%.2f"
+                                                                                            (/ (->> (map (partial average-exercise-duration-in-seconds player-history)
+                                                                                                         exercises)
+                                                                                                    (reduce +))
+                                                                                               (count exercises)))
+                                                               "s")
+                                                          60
+                                                          [50 180 50 255])
+                                                  [buttons-view state-atom (empty? (:selected-exercises @state-atom))]))))))
 
 (def state-file-name "times-table-state.edn")
 
@@ -870,17 +875,17 @@
   )
 
 (defn root-view []
-  (let [state-atom (atom (if (.exists (File. state-file-name))
-                              (assoc (read-string (slurp state-file-name))
-                                     :state :menu)
-                              initial-state))]
-    (fn []
+  (let [state-atom (dependable-atom/atom "times-table-state"
+                                         (if (.exists (File. state-file-name))
+                                           (assoc (read-string (slurp state-file-name))
+                                                  :state :menu)
+                                           initial-state))]
+    (keyboard/set-focused-event-handler! (partial event-handler state-atom))
+    (fn view []
       (let [state @state-atom]
-        (keyboard/set-focused-event-handler! (partial event-handler state-atom))
-
         (case (:state state)
-          :game (game-view state)
-          :menu (menu-view state-atom))))))
+          :game [game-view state]
+          :menu [menu-view state-atom])))))
 
 (defonce event-channel-atom (atom nil))
 
