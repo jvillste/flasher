@@ -564,14 +564,25 @@
 (defn random-exercise [state]
   (dissoc (->> exercises
                (remove (set (:selected-exercises state)))
-               (map (fn [exercise]
-                      (assoc exercise
-                             :sorting-value [(Math/round (float (* 5 (closest-to-two-seconds-sorting-value (get-in state [:players (:player state) :history])
-                                                                                                           exercise))))
 
-                                             (rand)])))
-               (sort-by :sorting-value)
-               (last))
+               (remove (fn [exercise]
+                         (> 2.5 (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
+                                                                    exercise))))
+
+               (sort-by (fn [exercise]
+                          (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
+                                                                exercise)))
+               (first)
+
+               ;; (map (fn [exercise]
+               ;;        (assoc exercise
+               ;;               :sorting-value [(Math/round (float (* 5 (closest-to-two-seconds-sorting-value (get-in state [:players (:player state) :history])
+               ;;                                                                                             exercise))))
+
+               ;;                               (rand)])))
+               ;; (sort-by :sorting-value)
+               ;; (last)
+               )
           :sorting-value))
 
 (defn add-random-exercise [state-atom]
