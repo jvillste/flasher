@@ -641,23 +641,22 @@
 
 (defn- buttons-view [state-atom selected-excercises-are-empty?]
   (layouts/horizontally-2 {:margin 10}
-                          [button "Clear selection (e)"
+                          [button "Clear selection (a)"
                            [50 50 50 255]
                            [180 180 180 255]
                            (fn []
                              (clear-selected-exercises state-atom))]
-                          [button "Add random (r)"
+                          [button "Add random (s)"
                            [50 50 50 255]
                            [180 180 180 255]
                            (fn []
                              (add-random-exercise state-atom))]
-                          [button "Toggle average duration (x)"
+                          [button "Toggle average duration (d)"
                            [50 50 50 255]
                            [180 180 180 255]
                            (fn []
                              (toggle-average-druation state-atom))]
-
-                          [button "Toggle right answer (g)"
+                          [button "Toggle right answer (f)"
                            [50 50 50 255]
                            [180 180 180 255]
                            (fn []
@@ -722,6 +721,7 @@
                                                                                                            [0 0 0 255]
                                                                                                            [200 200 200 255]))))))))
                                                                      :mouse-event-handler (fn [_node event]
+
                                                                                             (when (= :mouse-clicked (:type event))
                                                                                               (let [similar-exercises (filter (fn [available-exercise]
                                                                                                                                 #_(some #{(first (:related-numbers attributes))}
@@ -732,18 +732,32 @@
                                                                                                 (swap! state-atom update :selected-exercises (fn [selected-exericses]
                                                                                                                                                (if (contains? selected-exericses
                                                                                                                                                               (:exercise attributes))
-                                                                                                                                                 (if (:shift event)
-                                                                                                                                                   (apply disj
-                                                                                                                                                          selected-exericses
-                                                                                                                                                          similar-exercises)
-                                                                                                                                                   (disj selected-exericses
-                                                                                                                                                         (:exercise attributes)))
-                                                                                                                                                 (if (:shift event)
-                                                                                                                                                   (apply conj
-                                                                                                                                                          selected-exericses
-                                                                                                                                                          similar-exercises)
-                                                                                                                                                   (conj selected-exericses
-                                                                                                                                                         (:exercise attributes))))))))
+                                                                                                                                                 (cond (:shift event)
+                                                                                                                                                       (apply disj
+                                                                                                                                                              selected-exericses
+                                                                                                                                                              similar-exercises)
+                                                                                                                                                       (:meta event)
+                                                                                                                                                       (apply disj
+                                                                                                                                                              selected-exericses
+                                                                                                                                                              (->> similar-exercises
+                                                                                                                                                                   (filter (comp #{(-> attributes :exercise :type)}
+                                                                                                                                                                                 :type))))
+                                                                                                                                                       :else
+                                                                                                                                                       (disj selected-exericses
+                                                                                                                                                             (:exercise attributes)))
+                                                                                                                                                 (cond (:shift event)
+                                                                                                                                                       (apply conj
+                                                                                                                                                              selected-exericses
+                                                                                                                                                              similar-exercises)
+                                                                                                                                                       (:meta event)
+                                                                                                                                                       (apply conj
+                                                                                                                                                              selected-exericses
+                                                                                                                                                              (->> similar-exercises
+                                                                                                                                                                   (filter (comp #{(-> attributes :exercise :type)}
+                                                                                                                                                                                 :type))))
+                                                                                                                                                       :else
+                                                                                                                                                       (conj selected-exericses
+                                                                                                                                                             (:exercise attributes))))))))
                                                                                             event)})))
 
 
@@ -785,11 +799,11 @@
 
     (when (= :menu (:state state))
       (when (and (= :key-pressed (:type event))
-                 (= :x (:key event)))
+                 (= :d (:key event)))
         (toggle-average-druation state-atom))
 
       (when (and (= :key-pressed (:type event))
-                 (= :g (:key event)))
+                 (= :f (:key event)))
         (toggle-right-answer state-atom))
 
       (when (and (= :key-pressed (:type event))
@@ -797,11 +811,11 @@
         (start-game state-atom))
 
       (when (and (= :key-pressed (:type event))
-                 (= :e (:key event)))
+                 (= :a (:key event)))
         (clear-selected-exercises state-atom))
 
       (when (and (= :key-pressed (:type event))
-                 (= :r (:key event)))
+                 (= :s (:key event)))
         (cond (:shift? event)
               (doseq [_ (range 5)]
                 (add-random-exercise state-atom))
