@@ -13,3 +13,5 @@ pom.xml.asc
 .hg/
 /times-table-state.edn
 /.DS_Store
+/.clj-kondo/
+/.lsp/
