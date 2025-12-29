@@ -509,17 +509,18 @@
 
 
 (defn average-exercise-duration-in-seconds [durations exercise]
-  (let [relevant-durations (->> durations
+  (let [number-of-durations-examined 5
+        relevant-durations (->> durations
                                 (filter (fn [duration]
                                           (= exercise (:exercise duration))))
                                 (sort-by :time)
-                                (take-last 10))]
+                                (take-last number-of-durations-examined))]
     (float (/ (+ (reduce +
                          (map (fn [duration]
                                 (min 5000 (:duration duration)))
                               (filter right-answer? relevant-durations)))
-                 (* 5000 (- 10 (count (filter right-answer? relevant-durations)))))
-              10
+                 (* 5000 (- number-of-durations-examined (count (filter right-answer? relevant-durations)))))
+              number-of-durations-examined
               1000))))
 
 (deftest test-average-exercise-duration-in-seconds
@@ -536,8 +537,11 @@
                                                  :duration 10000}]
                                                {:x 2 :y 2}))))
 
+(defn- can-play? [state]
+  (<= 5 (count (:selected-exercises state))))
+
 (defn start-game [state-atom]
-  (when (not (empty? (:selected-exercises @state-atom)))
+  (when (can-play? @state-atom)
     (swap! state-atom (fn [state]
                         (let [state (reset-game-state state)]
                           (-> (initialize-exercise state
@@ -567,8 +571,8 @@
 
                (remove (fn [exercise]
                          (> 2.5 (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
-                                                                    exercise))))
-
+                                                                      exercise))))
+               (shuffle)
                (sort-by (fn [exercise]
                           (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
                                                                 exercise)))
@@ -639,7 +643,7 @@
   (swap! state-atom assoc :player (first (remove #{(:player @state-atom)}
                                                  (sort (keys (:players @state-atom)))))))
 
-(defn- buttons-view [state-atom selected-excercises-are-empty?]
+(defn- buttons-view [state-atom can-play?]
   (layouts/horizontally-2 {:margin 10}
                           [button "Clear selection (a)"
                            [50 50 50 255]
@@ -663,9 +667,9 @@
                              (toggle-right-answer state-atom))]
                           [button "Play! (space)"
                            [50 50 50 255]
-                           (if selected-excercises-are-empty?
-                             [100 100 100 255]
-                             [180 180 180 255])
+                           (if can-play?
+                             [180 180 180 255]
+                             [100 100 100 255])
                            (fn [] (start-game state-atom))]))
 
 (defn menu-view [state-atom]
@@ -766,10 +770,14 @@
                                                                                                          exercises)
                                                                                                     (reduce +))
                                                                                                (count exercises)))
-                                                               "s")
+                                                               "s / calculations with under 2.5s average duration: " (->> exercises
+                                                                                                                        (filter (fn [exercise]
+                                                                                                                                  (> 2.5 (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
+                                                                                                                                                                               exercise))))
+                                                                                                                        (count)))
                                                           60
                                                           [50 180 50 255])
-                                                  [buttons-view state-atom (empty? (:selected-exercises @state-atom))]))))))
+                                                  [buttons-view state-atom (can-play? @state-atom)]))))))
 
 (def state-file-name "times-table-state.edn")
 
@@ -817,14 +825,14 @@
       (when (and (= :key-pressed (:type event))
                  (= :s (:key event)))
         (cond (:shift? event)
-              (doseq [_ (range 5)]
-                (add-random-exercise state-atom))
+              (add-random-exercise state-atom)
 
               (:meta? event)
               (add-random-exercise-group state-atom)
 
               :else
-              (add-random-exercise state-atom)))
+              (doseq [_ (range 5)]
+                (add-random-exercise state-atom))))
 
       (when (and (= :key-pressed (:type event))
                  (= :tab (:key event)))
