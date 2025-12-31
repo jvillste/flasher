@@ -16,44 +16,32 @@
 (def maximum-duration 5000)
 (def candidate-exercise-count 4)
 
-;; (defn- exercises-to-average-durations [state]
-;;   (->> (get-in state
-;;                [:players
-;;                 (:player state)
-;;                 :history])
-;;        (group-by :exercise)
-;;        (medley/map-vals (fn [answers]
-;;                           (int (/ (->> answers
-;;                                        (sort-by :time)
-;;                                        (take 5)
-;;                                        (map :duration)
-;;                                        (reduce +))
-;;                                   (count answers)))))))
-
-
 (defn average-duration [state exercise]
   (get-in state
           [:players (:player state) :exercises exercise :average-duration]
           maximum-duration))
 
 (defn next-exercise [state]
-  (let [remaining-exercises (->> times-table/exercises
-                                 (remove (fn [exercise]
-                                           (or (= (:exercise state)
-                                                  exercise)
-                                               (< (average-duration state exercise)
-                                                  minimum-duration))))
-                                 (sort-by (fn [exercise]
-                                            (average-duration state exercise)))
-                                 (take candidate-exercise-count))]
-    (->> remaining-exercises
+  (let [current-exercises (->> (get-in state [:players (:player state) :exercises])
+                               (remove (fn [[exercise status]]
+                                         (or (= (:exercise state)
+                                                exercise)
+                                             (< (:average-duration status)
+                                                minimum-duration))))
+                               (sort-by (fn [[_exercise status]]
+                                          (:average-duration status)))
+                               (take candidate-exercise-count)
+                               (map first))]
+    (->> current-exercises
          (concat (take (max 0
                             (- candidate-exercise-count
-                               (count remaining-exercises)))
+                               (count current-exercises)))
                        (->> times-table/exercises
-                            (filter (fn [exercise]
-                                      (< (average-duration state exercise)
-                                         minimum-duration)))
+                            (remove (fn [exercise]
+                                      (or (= (:exercise state)
+                                             exercise)
+                                          (< (average-duration state exercise)
+                                             minimum-duration))))
                             (shuffle))))
          (rand-nth))))
 
@@ -79,46 +67,32 @@
                                         times-table/answer-animation-duration)))
 
     (let [state @state-atom
-          answer (get (vec (:options state))
-                      (times-table/anwser-key-to-option-index (:key event)))
           right-answer? (= (:answer (times-table/exercise-attributes (:exercise state)))
-                           answer)
-          next-exercise (next-exercise state)
-          duration (min maximum-duration
-                        (- (times-table/now)
-                           (:exercise-start-time state)))]
+                           (get (vec (:options state))
+                                (times-table/anwser-key-to-option-index (:key event))))
+          next-exercise (next-exercise state)]
 
-      (reset! state-atom
-              (-> state
-                  (assoc :answer answer
-                         :previous-answer-time (times-table/now))
-                  (cond->
-                      right-answer?
-                      (assoc-in [:players (:player state) :exercises (:exercise state)]
-                                {:last-answer-time (times-table/now)
-                                 :average-duration (/ (+ duration
-                                                         (get-in state
-                                                                 [:players (:player state) :exercises (:exercise state) :average-duration]
-                                                                 maximum-duration))
-                                                      2)})
-                      #_(update-in [:players (:player state) :history]
-                                   conj
-                                   {:exercise (:exercise state)
-                                    :time (times-table/now)
-                                    :duration (min maximum-duration
-                                                   (- (times-table/now)
-                                                      (:exercise-start-time state)))
-                                    :answer answer})
-
-                      right-answer?
-                      (times-table/initialize-exercise next-exercise))))
+      (swap! state-atom
+             assoc-in
+             [:players (:player state) :exercises (:exercise state)]
+             (merge {:average-duration (/ (+ (if right-answer?
+                                               (min maximum-duration
+                                                    (- (times-table/now)
+                                                       (:exercise-start-time state)))
+                                               maximum-duration)
+                                             (get-in state
+                                                     [:players (:player state) :exercises (:exercise state) :average-duration]
+                                                     maximum-duration))
+                                          2)}
+                    (when right-answer?
+                      {:last-right-answer-time (times-table/now)})))
 
       (if right-answer?
-        (do (save-game! @state-atom)
+        (do (swap! state-atom times-table/initialize-exercise next-exercise)
+            (save-game! @state-atom)
             (animation/swap-state! animation/start :right-answer times-table/answer-animation-duration))
         (do (animation/swap-state! animation/add-animation-end-callback :wrong-answer (fn []
-                                                                                        (when (some? next-exercise)
-                                                                                          (swap! state-atom times-table/initialize-exercise next-exercise))))
+                                                                                        (swap! state-atom times-table/initialize-exercise next-exercise)))
             (animation/swap-state! animation/start :wrong-answer times-table/answer-animation-duration)))))
 
 
@@ -230,6 +204,13 @@
                                                                                                                  state)
                                                                                        (layouts/with-margins 50 0 50 0
                                                                                          [exericse-grid state])
+
+                                                                                       (times-table/teksti (str "Number of ready exercises: " (->> (get-in state [:players (:player state) :exercises])
+                                                                                                                                                   (vals)
+                                                                                                                                                   (filter (fn [exercise]
+                                                                                                                                                             (< (:average-duration exercise)
+                                                                                                                                                                minimum-duration)))
+                                                                                                                                                   (count))))
 
 
                                                                                        #_(layouts/with-maximum-size 1000 nil
