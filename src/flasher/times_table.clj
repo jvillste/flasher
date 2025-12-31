@@ -93,7 +93,7 @@
 (def theme dark-theme)
 
 (def font (font/built-in-font {:name :dialog-input
-                               :size 40}))
+                               :size tekstin-koko}))
 
 (defn teksti [teksti & [_koko väri]]
   (visuals/text-area (str teksti)
@@ -276,7 +276,7 @@
                                           (block (duration-bar-color current-duration-in-seconds)))))))
 
 
-(defn- options-view [wrong-answer-is-animating? state]
+(defn options-view [wrong-answer-is-animating? state]
   (layouts/grid [(map (fn [option]
                         (layouts/with-margin 10
                           (teksti option tekstin-koko
