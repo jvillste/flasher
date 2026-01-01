@@ -90,27 +90,28 @@
                                                              (concat current-exercises-list
                                                                      exercises-in-familiar-groups)))))]
     (concat exercises-in-familiar-groups
-            exercises-with-familiar-numbers)))
+            (random/shuffle-collection exercises-with-familiar-numbers))))
 
 (deftest test-next-exercise-candidates
   (is (= '({:type :multiplication, :x 3, :y 4}
            {:type :division, :x 3, :y 4}
            {:type :division, :x 4, :y 3}
-           {:type :multiplication, :x 2, :y 4}
-           {:type :multiplication, :x 3, :y 3}
-           {:type :multiplication, :x 3, :y 5}
-           {:type :multiplication, :x 4, :y 2}
-           {:type :multiplication, :x 4, :y 4}
            {:type :multiplication, :x 5, :y 3}
-           {:type :division, :x 2, :y 4}
-           {:type :division, :x 3, :y 3}
+           {:type :multiplication, :x 2, :y 4}
+           {:type :multiplication, :x 4, :y 4}
+           {:type :multiplication, :x 4, :y 2}
+           {:type :division, :x 5, :y 3}
+           {:type :multiplication, :x 3, :y 5}
            {:type :division, :x 3, :y 5}
-           {:type :division, :x 4, :y 2}
+           {:type :multiplication, :x 3, :y 3}
            {:type :division, :x 4, :y 4}
-           {:type :division, :x 5, :y 3})
-         (next-exercise-candidates {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 1000}}}},
-                                    :player 1
-                                    :exercise {:type :multiplication, :x 4, :y 3}}))))
+           {:type :division, :x 3, :y 3}
+           {:type :division, :x 2, :y 4}
+           {:type :division, :x 4, :y 2})
+         (random/with-fixed-random-seed
+           (next-exercise-candidates {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 1000}}}},
+                                      :player 1
+                                      :exercise {:type :multiplication, :x 4, :y 3}})))))
 
 (defn next-exercise [state]
   (let [current-exercises-list (current-exercises state)
