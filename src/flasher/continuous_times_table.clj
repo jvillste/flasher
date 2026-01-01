@@ -21,6 +21,22 @@
           [:players (:player state) :exercises exercise :average-duration]
           maximum-duration))
 
+(defn group-familarity [player-exercises]
+  (medley/map-vals (fn [exercise-statuses]
+                     (/ (reduce + (map (comp :average-duration second)
+                                       exercise-statuses))
+                        (count exercise-statuses)))
+                   (group-by (comp :group times-table/exercise-attributes first)
+                             player-exercises)))
+
+(deftest test-group-familarity
+  (is (= {{:type :multiplication, :lower-number 2, :higher-number 3} 2000,
+          {:type :multiplication, :lower-number 3, :higher-number 5} 5000}
+         (group-familarity {{:type :multiplication, :x 2, :y 3} {:average-duration 1000}
+                            {:type :multiplication, :x 3, :y 2} {:average-duration 2000}
+                            {:type :division, :x 2, :y 3} {:average-duration 3000}
+                            {:type :division, :x 5, :y 3} {:average-duration 5000}}))))
+
 (defn next-exercise [state]
   (let [current-exercises (->> (get-in state [:players (:player state) :exercises])
                                (remove (fn [[exercise status]]
@@ -31,20 +47,25 @@
                                (sort-by (fn [[_exercise status]]
                                           (:average-duration status)))
                                (take candidate-exercise-count)
-                               (map first))]
-    (->> current-exercises
-         (concat (take (max 0
+                               (map first))
+        group-familiarity-map (group-familarity (get-in state [:players (:player state) :exercises]))]
+    (->> (concat current-exercises
+                 (take (max 0
                             (- candidate-exercise-count
                                (count current-exercises)))
-                       (->> times-table/exercises
-                            (remove (fn [exercise]
-                                      (or (= (:exercise state)
-                                             exercise)
-                                          (< (average-duration state exercise)
-                                             minimum-duration))))
-                            (shuffle))))
+                       (concat (->> times-table/exercises
+                                    (remove (set current-exercises))
+                                    (remove (fn [exercise]
+                                              (or (= (:exercise state)
+                                                     exercise)
+                                                  (< (average-duration state exercise)
+                                                     minimum-duration))))
+                                    (remove (comp nil? group-familiarity-map :group times-table/exercise-attributes))
+                                    (sort-by (comp group-familiarity-map :group times-table/exercise-attributes)))
+                               (->> times-table/exercises
+                                    (filter (comp nil? group-familiarity-map :group times-table/exercise-attributes))
+                                    (shuffle)))))
          (rand-nth))))
-
 
 (def initial-state {:players {1 {:name "Lumo"}
                               2 {:name "Jukka"}}
@@ -58,6 +79,11 @@
   (spit state-file-name
         (prn-str state)))
 
+(comment
+  (spit state-file-name
+        (prn-str initial-state))
+  )
+
 (defn keyboard-event-handler [state-atom _node event]
   (when (and (= :key-pressed (:type event))
              (some #{(:key event)}
@@ -67,23 +93,26 @@
                                         times-table/answer-animation-duration)))
 
     (let [state @state-atom
+          answer (get (vec (:options state))
+                      (times-table/anwser-key-to-option-index (:key event)))
           right-answer? (= (:answer (times-table/exercise-attributes (:exercise state)))
-                           (get (vec (:options state))
-                                (times-table/anwser-key-to-option-index (:key event))))
+                           answer)
           next-exercise (next-exercise state)]
+
+      (swap! state-atom assoc :answer answer)
 
       (swap! state-atom
              assoc-in
              [:players (:player state) :exercises (:exercise state)]
-             (merge {:average-duration (/ (+ (if right-answer?
-                                               (min maximum-duration
-                                                    (- (times-table/now)
-                                                       (:exercise-start-time state)))
-                                               maximum-duration)
-                                             (get-in state
-                                                     [:players (:player state) :exercises (:exercise state) :average-duration]
-                                                     maximum-duration))
-                                          2)}
+             (merge {:average-duration (double (/ (+ (if right-answer?
+                                                       (min maximum-duration
+                                                            (- (times-table/now)
+                                                               (:exercise-start-time state)))
+                                                       maximum-duration)
+                                                     (get-in state
+                                                             [:players (:player state) :exercises (:exercise state) :average-duration]
+                                                             maximum-duration))
+                                                  2))}
                     (when right-answer?
                       {:last-right-answer-time (times-table/now)})))
 
