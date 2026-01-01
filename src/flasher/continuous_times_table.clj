@@ -1,16 +1,15 @@
 (ns flasher.continuous-times-table
   (:require
    [clojure.test :refer :all]
+   [flasher.random :as random]
    [flasher.times-table :as times-table]
-   [fungl.color :as color]
    [flow-gl.gui.animation :as animation]
    [flow-gl.gui.visuals :as visuals]
    [fungl.application :as application]
+   [fungl.color :as color]
    [fungl.dependable-atom :as dependable-atom]
    [fungl.layouts :as layouts]
-   [medley.core :as medley])
-  (:import
-   (java.io File)))
+   [medley.core :as medley]))
 
 (def minimum-duration 2500)
 (def maximum-duration 5000)
@@ -37,35 +36,94 @@
                             {:type :division, :x 2, :y 3} {:average-duration 3000}
                             {:type :division, :x 5, :y 3} {:average-duration 5000}}))))
 
+(defn current-exercises [state]
+  (->> (get-in state [:players (:player state) :exercises])
+       (remove (fn [[exercise status]]
+                 (or (= (:exercise state)
+                        exercise)
+                     (< (:average-duration status)
+                        minimum-duration))))
+       (sort-by (fn [[_exercise status]]
+                  (:average-duration status)))
+       (take candidate-exercise-count)
+       (map first)))
+
+(defn close-numbers? [x1 x2 y1 y2]
+  (and (= x1
+          x2)
+       (or (= y1
+              (dec y2))
+           (= y1
+              (inc y2)))))
+
+(defn next-exercise-candidates [state]
+  (let [player-exercises (get-in state [:players (:player state) :exercises])
+        current-exercises-list (current-exercises state)
+        group-familiarity-map (group-familarity player-exercises)
+        exercises-in-familiar-groups (->> times-table/exercises
+                                          (remove (set current-exercises-list))
+                                          (remove (fn [exercise]
+                                                    (or (= (:exercise state)
+                                                           exercise)
+                                                        (< (average-duration state exercise)
+                                                           minimum-duration))))
+                                          (remove (comp nil? group-familiarity-map :group times-table/exercise-attributes))
+                                          (sort-by (comp group-familiarity-map :group times-table/exercise-attributes)))
+        exercises-with-familiar-numbers (->> times-table/exercises
+                                             (remove (set current-exercises-list))
+                                             (remove (set exercises-in-familiar-groups))
+                                             (remove (fn [exercise]
+                                                       (or (= (:exercise state)
+                                                              exercise)
+                                                           (< (average-duration state exercise)
+                                                              minimum-duration))))
+                                             (filter (fn [exercise]
+                                                       (some (fn [familiar-exercise]
+                                                               (or (close-numbers? (:x exercise)
+                                                                                   (:x familiar-exercise)
+                                                                                   (:y exercise)
+                                                                                   (:y familiar-exercise))
+                                                                   (close-numbers? (:y exercise)
+                                                                                   (:y familiar-exercise)
+                                                                                   (:x exercise)
+                                                                                   (:x familiar-exercise))))
+                                                             (concat current-exercises-list
+                                                                     exercises-in-familiar-groups)))))]
+    (concat exercises-in-familiar-groups
+            exercises-with-familiar-numbers)))
+
+(deftest test-next-exercise-candidates
+  (is (= '({:type :multiplication, :x 3, :y 4}
+           {:type :division, :x 3, :y 4}
+           {:type :division, :x 4, :y 3}
+           {:type :multiplication, :x 2, :y 4}
+           {:type :multiplication, :x 3, :y 3}
+           {:type :multiplication, :x 3, :y 5}
+           {:type :multiplication, :x 4, :y 2}
+           {:type :multiplication, :x 4, :y 4}
+           {:type :multiplication, :x 5, :y 3}
+           {:type :division, :x 2, :y 4}
+           {:type :division, :x 3, :y 3}
+           {:type :division, :x 3, :y 5}
+           {:type :division, :x 4, :y 2}
+           {:type :division, :x 4, :y 4}
+           {:type :division, :x 5, :y 3})
+         (next-exercise-candidates {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 1000}}}},
+                                    :player 1
+                                    :exercise {:type :multiplication, :x 4, :y 3}}))))
+
 (defn next-exercise [state]
-  (let [current-exercises (->> (get-in state [:players (:player state) :exercises])
-                               (remove (fn [[exercise status]]
-                                         (or (= (:exercise state)
-                                                exercise)
-                                             (< (:average-duration status)
-                                                minimum-duration))))
-                               (sort-by (fn [[_exercise status]]
-                                          (:average-duration status)))
-                               (take candidate-exercise-count)
-                               (map first))
-        group-familiarity-map (group-familarity (get-in state [:players (:player state) :exercises]))]
-    (->> (concat current-exercises
-                 (take (max 0
-                            (- candidate-exercise-count
-                               (count current-exercises)))
-                       (concat (->> times-table/exercises
-                                    (remove (set current-exercises))
-                                    (remove (fn [exercise]
-                                              (or (= (:exercise state)
-                                                     exercise)
-                                                  (< (average-duration state exercise)
-                                                     minimum-duration))))
-                                    (remove (comp nil? group-familiarity-map :group times-table/exercise-attributes))
-                                    (sort-by (comp group-familiarity-map :group times-table/exercise-attributes)))
-                               (->> times-table/exercises
-                                    (filter (comp nil? group-familiarity-map :group times-table/exercise-attributes))
-                                    (shuffle)))))
-         (rand-nth))))
+  (let [current-exercises-list (current-exercises state)
+        next-exercise-candidates-list (next-exercise-candidates state)]
+    (random/pick-random (concat current-exercises-list
+                                (take (max 0
+                                           (- candidate-exercise-count
+                                              (count current-exercises-list)))
+                                      (concat next-exercise-candidates-list
+                                              (->> times-table/exercises
+                                                   (remove (set current-exercises-list))
+                                                   (remove (set next-exercise-candidates-list))
+                                                   (random/shuffle-collection))))))))
 
 (def initial-state {:players {1 {:name "Lumo"}
                               2 {:name "Jukka"}}
