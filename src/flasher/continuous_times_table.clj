@@ -17,10 +17,37 @@
 (def maximum-duration 5000)
 (def candidate-exercise-count 4)
 
-(defn average-duration [state exercise]
+(defn exercise-state [state exercise]
   (get-in state
-          [:players (:player state) :exercises exercise :average-duration]
-          maximum-duration))
+          [:players (:player state) :exercises exercise]))
+
+(def day-in-milliseconds (* 1000 60 60 24))
+
+(def time-interval-in-milliseconds-after-repetition {1 (* 1 day-in-milliseconds)
+                                                     2 (* 2 day-in-milliseconds)
+                                                     3 (* 4 day-in-milliseconds)
+                                                     ;; 4 (* 8 day-in-milliseconds)
+                                                     })
+
+(def maximum-repetition (inc (apply max (keys time-interval-in-milliseconds-after-repetition))))
+
+(defn average-duration [state exercise]
+  (get (exercise-state state exercise)
+       :average-duration
+       maximum-duration))
+
+(defn repetition [state exercise]
+  (get (exercise-state state exercise)
+       :repetition
+       0))
+
+(defn can-be-repeated? [state exercise]
+  (let [repetition-number (repetition state exercise)]
+    (or (= 0 repetition-number)
+        (and (> maximum-repetition repetition-number)
+             (< (+ (time-interval-in-milliseconds-after-repetition repetition-number)
+                   (:last-right-answer-time (exercise-state state exercise)))
+                (times-table/now))))))
 
 (defn group-familarity [player-exercises]
   (medley/map-vals (fn [exercise-statuses]
@@ -62,7 +89,9 @@
   (let [player-exercises (get-in state [:players (:player state) :exercises])
         current-exercises-list (current-exercises state)
         group-familiarity-map (group-familarity player-exercises)
-        exercises-in-familiar-groups (->> times-table/exercises
+        repeatable-exercises (filter (partial can-be-repeated? state)
+                                     times-table/exercises)
+        exercises-in-familiar-groups (->> repeatable-exercises
                                           (remove (set current-exercises-list))
                                           (remove (fn [exercise]
                                                     (or (= (:exercise state)
@@ -71,7 +100,7 @@
                                                            minimum-duration))))
                                           (remove (comp nil? group-familiarity-map :group times-table/exercise-attributes))
                                           (sort-by (comp group-familiarity-map :group times-table/exercise-attributes)))
-        exercises-with-familiar-numbers (->> times-table/exercises
+        exercises-with-familiar-numbers (->> repeatable-exercises
                                              (remove (set current-exercises-list))
                                              (remove (set exercises-in-familiar-groups))
                                              (remove (fn [exercise]
@@ -164,19 +193,33 @@
       (swap! state-atom assoc :answer answer)
 
       (swap! state-atom
-             assoc-in
+             update-in
              [:players (:player state) :exercises (:exercise state)]
-             (merge {:average-duration (double (/ (+ (if right-answer?
-                                                       (min maximum-duration
-                                                            (- (times-table/now)
-                                                               (:exercise-start-time state)))
-                                                       maximum-duration)
-                                                     (get-in state
-                                                             [:players (:player state) :exercises (:exercise state) :average-duration]
-                                                             maximum-duration))
-                                                  2))}
-                    (when right-answer?
-                      {:last-right-answer-time (times-table/now)})))
+             (fn [exercise-state]
+               (let [new-average-duration (double (/ (+ (if right-answer?
+                                                          (min maximum-duration
+                                                               (- (times-table/now)
+                                                                  (:exercise-start-time state)))
+                                                          maximum-duration)
+                                                        (get-in state
+                                                                [:players (:player state) :exercises (:exercise state) :average-duration]
+                                                                maximum-duration))
+                                                     2))]
+                 (cond (< new-average-duration
+                          minimum-duration)
+                       (assoc exercise-state
+                              :average-duration maximum-duration
+                              :repetition (min maximum-repetition
+                                               (inc (repetition state (:exercise state))))
+                              :last-right-answer-time (times-table/now))
+
+                       right-answer?
+                       (assoc exercise-state
+                              :average-duration new-average-duration
+                              :last-right-answer-time (times-table/now))
+
+                       :else
+                       exercise-state))))
 
       (if right-answer?
         (do (swap! state-atom times-table/initialize-exercise next-exercise)
@@ -234,35 +277,74 @@
                                         (map times-table/exercise-attributes times-table/exercises))]
                   (for [attributes row]
 
-                    {:node (layouts/with-margin 5
-                             (layouts/box 5
-                                          (visuals/rectangle-2 :fill-color  (if (< (average-duration state (:exercise attributes))
-                                                                                   minimum-duration)
-                                                                              ready-color
-                                                                              [0
-                                                                               0
-                                                                               (* (max 0
-                                                                                       (min 1
-                                                                                            (/ (- maximum-duration (average-duration state (:exercise attributes)))
-                                                                                               maximum-duration)))
-                                                                                  255)
-                                                                               255])
-                                                               :corner-arc-radius 20)
-                                          (layouts/with-minimum-size 150 nil
-                                            (layouts/with-maximum-size 150 nil
-                                              (layouts/center-horizontally
-                                               (times-table/teksti (case (:exercise-rendering state)
+                    {:node (let [width 150]
+                             (layouts/with-margin 5
+                               (layouts/vertically-2 {:margin 10 :centered? true}
+                                                     (layouts/box 5
+                                                                  (visuals/rectangle-2 :fill-color  (if (can-be-repeated? state (:exercise attributes))
+                                                                                                      [0
+                                                                                                       0
+                                                                                                       (float (max 0
+                                                                                                                   (min 1
+                                                                                                                        (/ (- maximum-duration
+                                                                                                                              (average-duration state (:exercise attributes)))
+                                                                                                                           minimum-duration))))
+                                                                                                       255]
+                                                                                                      ready-color)
+                                                                                       :corner-arc-radius 20)
+                                                                  (layouts/with-minimum-size width nil
+                                                                    (layouts/with-maximum-size width nil
+                                                                      (layouts/center-horizontally
+                                                                       (times-table/teksti (case (:exercise-rendering state)
 
-                                                                     :average-duration
-                                                                     (str (format "%.2f" (float (/ (average-duration state (:exercise attributes))
-                                                                                                   1000))))
+                                                                                             :average-duration
+                                                                                             (str (format "%.2f" (float (/ (average-duration state (:exercise attributes))
+                                                                                                                           1000))))
 
-                                                                     :right-answer
-                                                                     (:answer attributes)
+                                                                                             :right-answer
+                                                                                             (:answer attributes)
 
-                                                                     (:question attributes))
-                                                                   times-table/tekstin-koko
-                                                                   [200 200 200 255]))))))}))))
+                                                                                             (:question attributes))
+                                                                                           times-table/tekstin-koko
+                                                                                           [200 200 200 255])))))
+
+                                                     (layouts/with-minimum-size nil 10
+                                                       (layouts/horizontally-2 {}
+                                                                               (repeat (repetition state (:exercise attributes))
+                                                                                       (assoc (visuals/rectangle-2 :fill-color ready-color
+                                                                                                                   :draw-color [80 80 80 255]
+                                                                                                                   :line-width 2
+                                                                                                                   :corner-arc-radius 20)
+                                                                                              :width (/ width maximum-repetition)
+                                                                                              :height 10)))))))}))))
+
+(defn add-repetition [exercise-state]
+  (if (< (:average-duration exercise-state)
+         minimum-duration)
+    (assoc exercise-state
+           :repetition 1
+           :average-duration maximum-duration)
+    (assoc exercise-state
+           :repetition 0)))
+
+(deftest test-add-repetition
+  (is (= {:average-duration 5000,
+          :last-right-answer-time 1767360073925,
+          :repetition 1}
+         (add-repetition {:average-duration 2229.3100810050964,
+                          :last-right-answer-time 1767360073925})))
+
+  (is (= {:average-duration 3000,
+          :last-right-answer-time 1767360073925,
+          :repetition 0}
+         (add-repetition {:average-duration 3000
+                          :last-right-answer-time 1767360073925}))))
+(comment
+  (save-game! (-> (read-string (slurp state-file-name))
+                  (update-in [:players 1 :exercises] (partial medley/map-vals add-repetition))
+                  (update-in [:players 2 :exercises] (partial medley/map-vals add-repetition))
+                  (update-in [:players 3 :exercises] (partial medley/map-vals add-repetition))))
+  ) ;; TODO: remove me
 
 (defn- game-view  []
   (let [state-atom (dependable-atom/atom (if (.exists (File. state-file-name))
@@ -296,12 +378,10 @@
                                                                                        (layouts/with-margins 50 0 50 0
                                                                                          [exericse-grid state])
 
-                                                                                       (times-table/teksti (str "Number of ready exercises: " (->> (get-in state [:players (:player state) :exercises])
-                                                                                                                                                   (vals)
-                                                                                                                                                   (filter (fn [exercise]
-                                                                                                                                                             (< (:average-duration exercise)
-                                                                                                                                                                minimum-duration)))
-                                                                                                                                                   (count))))
+                                                                                       (times-table/teksti (str "Number of completed repetitions: " (->> (get-in state [:players (:player state) :exercises])
+                                                                                                                                                         (vals)
+                                                                                                                                                         (map :repetition)
+                                                                                                                                                         (reduce +))))
 
 
                                                                                        #_(layouts/with-maximum-size 1000 nil
@@ -355,3 +435,7 @@
 
 
 (application/def-start game-view)
+
+(comment
+  (reset! event-channel-atom nil)
+  )
