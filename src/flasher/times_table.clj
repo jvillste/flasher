@@ -640,8 +640,10 @@
 
 
 (defn change-to-next-player [state-atom]
-  (swap! state-atom assoc :player (first (remove #{(:player @state-atom)}
-                                                 (sort (keys (:players @state-atom)))))))
+  (swap! state-atom assoc :player (let [player-count (count (:players @state-atom))]
+                                    (if (= player-count (:player @state-atom))
+                                      1
+                                      (inc (:player @state-atom))))))
 
 (defn- buttons-view [state-atom can-play?]
   (layouts/horizontally-2 {:margin 10}

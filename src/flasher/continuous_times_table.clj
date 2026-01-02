@@ -9,7 +9,9 @@
    [fungl.color :as color]
    [fungl.dependable-atom :as dependable-atom]
    [fungl.layouts :as layouts]
-   [medley.core :as medley]))
+   [medley.core :as medley])
+  (:import
+   (java.io File)))
 
 (def minimum-duration 2500)
 (def maximum-duration 5000)
@@ -127,7 +129,8 @@
                                                    (random/shuffle-collection))))))))
 
 (def initial-state {:players {1 {:name "Lumo"}
-                              2 {:name "Jukka"}}
+                              2 {:name "Jukka"}
+                              3 {:name "Valo"}}
                     :player 1
                     :exercise-rendering :question})
 
