@@ -46,7 +46,7 @@
     (or (= 0 repetition-number)
         (and (> maximum-repetition repetition-number)
              (< (+ (time-interval-in-milliseconds-after-repetition repetition-number)
-                   (:last-right-answer-time (exercise-state state exercise)))
+                   (:last-completion-time (exercise-state state exercise)))
                 (times-table/now))))))
 
 (defn group-familarity [player-exercises]
@@ -65,18 +65,6 @@
                             {:type :division, :x 2, :y 3} {:average-duration 3000}
                             {:type :division, :x 5, :y 3} {:average-duration 5000}}))))
 
-(defn current-exercises [state]
-  (->> (get-in state [:players (:player state) :exercises])
-       (remove (fn [[exercise status]]
-                 (or (= (:exercise state)
-                        exercise)
-                     (< (:average-duration status)
-                        minimum-duration))))
-       (sort-by (fn [[_exercise status]]
-                  (:average-duration status)))
-       (take candidate-exercise-count)
-       (map first)))
-
 (defn close-numbers? [x1 x2 y1 y2]
   (and (= x1
           x2)
@@ -86,28 +74,23 @@
               (inc y2)))))
 
 (defn next-exercise-candidates [state]
-  (let [player-exercises (get-in state [:players (:player state) :exercises])
-        current-exercises-list (current-exercises state)
-        group-familiarity-map (group-familarity player-exercises)
-        repeatable-exercises (filter (partial can-be-repeated? state)
-                                     times-table/exercises)
-        exercises-in-familiar-groups (->> repeatable-exercises
-                                          (remove (set current-exercises-list))
-                                          (remove (fn [exercise]
-                                                    (or (= (:exercise state)
-                                                           exercise)
-                                                        (< (average-duration state exercise)
-                                                           minimum-duration))))
+  (let [player-exercise-statuses (get-in state [:players (:player state) :exercises])
+        current-exercises (->> (keys player-exercise-statuses)
+                               (filter (partial can-be-repeated? state))
+                               (sort-by (fn [exercise]
+                                          [(- maximum-repetition
+                                              (repetition state exercise))
+                                           (average-duration state exercise)])))
+        group-familiarity-map (group-familarity player-exercise-statuses)
+        exercises-in-familiar-groups (->> times-table/exercises
+                                          (filter (partial can-be-repeated? state))
+                                          (remove (set current-exercises))
                                           (remove (comp nil? group-familiarity-map :group times-table/exercise-attributes))
                                           (sort-by (comp group-familiarity-map :group times-table/exercise-attributes)))
-        exercises-with-familiar-numbers (->> repeatable-exercises
-                                             (remove (set current-exercises-list))
+        exercises-with-familiar-numbers (->> times-table/exercises
+                                             (filter (partial can-be-repeated? state))
+                                             (remove (set current-exercises))
                                              (remove (set exercises-in-familiar-groups))
-                                             (remove (fn [exercise]
-                                                       (or (= (:exercise state)
-                                                              exercise)
-                                                           (< (average-duration state exercise)
-                                                              minimum-duration))))
                                              (filter (fn [exercise]
                                                        (some (fn [familiar-exercise]
                                                                (or (close-numbers? (:x exercise)
@@ -118,44 +101,58 @@
                                                                                    (:y familiar-exercise)
                                                                                    (:x exercise)
                                                                                    (:x familiar-exercise))))
-                                                             (concat current-exercises-list
-                                                                     exercises-in-familiar-groups)))))]
-    (concat exercises-in-familiar-groups
-            (random/shuffle-collection exercises-with-familiar-numbers))))
+                                                             (concat current-exercises
+                                                                     exercises-in-familiar-groups))))
+                                             (random/shuffle-collection))]
+    (->> (concat current-exercises
+                 exercises-in-familiar-groups
+                 exercises-with-familiar-numbers)
+         (remove (fn [exercise]
+                   (= (:exercise state)
+                      exercise))))))
 
 (deftest test-next-exercise-candidates
-  (is (= '({:type :multiplication, :x 3, :y 4}
-           {:type :division, :x 3, :y 4}
-           {:type :division, :x 4, :y 3}
-           {:type :multiplication, :x 5, :y 3}
-           {:type :multiplication, :x 2, :y 4}
-           {:type :multiplication, :x 4, :y 4}
-           {:type :multiplication, :x 4, :y 2}
-           {:type :division, :x 5, :y 3}
-           {:type :multiplication, :x 3, :y 5}
-           {:type :division, :x 3, :y 5}
-           {:type :multiplication, :x 3, :y 3}
-           {:type :division, :x 4, :y 4}
-           {:type :division, :x 3, :y 3}
-           {:type :division, :x 2, :y 4}
-           {:type :division, :x 4, :y 2})
-         (random/with-fixed-random-seed
-           (next-exercise-candidates {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 1000}}}},
-                                      :player 1
-                                      :exercise {:type :multiplication, :x 4, :y 3}})))))
+  (is (= '({:type :multiplication, :x 4, :y 2}
+           {:y 4, :type :multiplication, :x 3}
+           {:y 4, :type :division, :x 3}
+           {:y 3, :type :division, :x 4}
+           {:y 4, :type :multiplication, :x 2}
+           {:y 4, :type :division, :x 2}
+           {:y 2, :type :division, :x 4}
+           {:y 2, :type :division, :x 3}
+           {:y 4, :type :multiplication, :x 4}
+           {:y 3, :type :multiplication, :x 2}
+           {:y 5, :type :division, :x 3}
+           {:y 3, :type :multiplication, :x 3}
+           {:y 3, :type :division, :x 2}
+           {:y 2, :type :multiplication, :x 5}
+           {:y 3, :type :multiplication, :x 5}
+           {:y 2, :type :division, :x 5}
+           {:y 5, :type :multiplication, :x 3}
+           {:y 3, :type :division, :x 5}
+           {:y 2, :type :multiplication, :x 3}
+           {:y 5, :type :division, :x 2}
+           {:y 5, :type :multiplication, :x 2}
+           {:y 4, :type :division, :x 4}
+           {:y 3, :type :division, :x 3})
+         (with-redefs [times-table/now (constantly 5000)
+                       time-interval-in-milliseconds-after-repetition {1 1000}]
+           (random/with-fixed-random-seed
+             (next-exercise-candidates {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 3000}
+                                                                 {:type :multiplication, :x 4, :y 2} {:average-duration 5000
+                                                                                                      :repetition 1
+                                                                                                      :last-completion-time 0}}}},
+                                        :player 1
+                                        :exercise {:type :multiplication, :x 4, :y 3}}))))))
 
 (defn next-exercise [state]
-  (let [current-exercises-list (current-exercises state)
-        next-exercise-candidates-list (next-exercise-candidates state)]
-    (random/pick-random (concat current-exercises-list
-                                (take (max 0
-                                           (- candidate-exercise-count
-                                              (count current-exercises-list)))
-                                      (concat next-exercise-candidates-list
-                                              (->> times-table/exercises
-                                                   (remove (set current-exercises-list))
-                                                   (remove (set next-exercise-candidates-list))
-                                                   (random/shuffle-collection))))))))
+  (let [next-exercise-candidates-list (next-exercise-candidates state)]
+    (->> (concat next-exercise-candidates-list
+                 (->> times-table/exercises
+                      (remove (set next-exercise-candidates-list))
+                      (random/shuffle-collection)))
+         (take candidate-exercise-count)
+         (random/pick-random))))
 
 (def initial-state {:players {1 {:name "Lumo"}
                               2 {:name "Jukka"}
@@ -187,39 +184,41 @@
           answer (get (vec (:options state))
                       (times-table/anwser-key-to-option-index (:key event)))
           right-answer? (= (:answer (times-table/exercise-attributes (:exercise state)))
-                           answer)
+                                  answer)
           next-exercise (next-exercise state)]
 
       (swap! state-atom assoc :answer answer)
 
-      (swap! state-atom
-             update-in
-             [:players (:player state) :exercises (:exercise state)]
-             (fn [exercise-state]
-               (let [new-average-duration (double (/ (+ (if right-answer?
-                                                          (min maximum-duration
-                                                               (- (times-table/now)
-                                                                  (:exercise-start-time state)))
-                                                          maximum-duration)
-                                                        (get-in state
-                                                                [:players (:player state) :exercises (:exercise state) :average-duration]
-                                                                maximum-duration))
-                                                     2))]
-                 (cond (< new-average-duration
-                          minimum-duration)
-                       (assoc exercise-state
-                              :average-duration maximum-duration
-                              :repetition (min maximum-repetition
-                                               (inc (repetition state (:exercise state))))
-                              :last-right-answer-time (times-table/now))
+      (when (can-be-repeated? state (:exercise state))
+        (swap! state-atom
+               update-in
+               [:players (:player state) :exercises (:exercise state)]
+               (fn [exercise-state]
+                 (let [new-average-duration (double (/ (+ (if right-answer?
+                                                            (min maximum-duration
+                                                                 (- (times-table/now)
+                                                                    (:exercise-start-time state)))
+                                                            maximum-duration)
+                                                          (get-in state
+                                                                  [:players (:player state) :exercises (:exercise state) :average-duration]
+                                                                  maximum-duration))
+                                                       2))
+                       exercise-state (or exercise-state
+                                          {:repetition 0})]
+                   (cond (< new-average-duration
+                            minimum-duration)
+                         (assoc exercise-state
+                                :average-duration maximum-duration
+                                :repetition (min maximum-repetition
+                                                 (inc (repetition state (:exercise state))))
+                                :last-completion-time (times-table/now))
 
-                       right-answer?
-                       (assoc exercise-state
-                              :average-duration new-average-duration
-                              :last-right-answer-time (times-table/now))
+                         right-answer?
+                         (assoc exercise-state
+                                :average-duration new-average-duration)
 
-                       :else
-                       exercise-state))))
+                         :else
+                         exercise-state)))))
 
       (if right-answer?
         (do (swap! state-atom times-table/initialize-exercise next-exercise)
@@ -329,22 +328,30 @@
 
 (deftest test-add-repetition
   (is (= {:average-duration 5000,
-          :last-right-answer-time 1767360073925,
+          :last-completion-time 1767360073925,
           :repetition 1}
          (add-repetition {:average-duration 2229.3100810050964,
-                          :last-right-answer-time 1767360073925})))
+                          :last-completion-time 1767360073925})))
 
   (is (= {:average-duration 3000,
-          :last-right-answer-time 1767360073925,
+          :last-completion-time 1767360073925,
           :repetition 0}
          (add-repetition {:average-duration 3000
-                          :last-right-answer-time 1767360073925}))))
+                          :last-completion-time 1767360073925}))))
+
+(defn set-last-completion-time [exercise-state]
+  (dissoc (if (= 1 (:repetition exercise-state))
+            (assoc exercise-state
+                   :last-completion-time (:last-right-answer-time exercise-state))
+            exercise-state)
+          :last-right-answer-time))
+
 (comment
-  (save-game! (-> (read-string (slurp state-file-name))
-                  (update-in [:players 1 :exercises] (partial medley/map-vals add-repetition))
-                  (update-in [:players 2 :exercises] (partial medley/map-vals add-repetition))
-                  (update-in [:players 3 :exercises] (partial medley/map-vals add-repetition))))
-  ) ;; TODO: remove me
+  (#_save-game! (-> (read-string (slurp state-file-name))
+                  (update-in [:players 1 :exercises] (partial medley/map-vals set-last-completion-time))
+                  (update-in [:players 2 :exercises] (partial medley/map-vals set-last-completion-time))
+                  (update-in [:players 3 :exercises] (partial medley/map-vals set-last-completion-time))))
+  )
 
 (defn- game-view  []
   (let [state-atom (dependable-atom/atom (if (.exists (File. state-file-name))

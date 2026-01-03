@@ -57,17 +57,17 @@
         (:type operation))
    operation))
 
-(def exercises (->> (concat (for [x (range 2 10)
-                                  y (range 2 10)]
-                              {:type :multiplication
-                               :x x
-                               :y y})
-                            (for [x (range 2 10)
-                                  y (range 2 10)]
+(def exercises (concat (for [x (range 2 10)
+                             y (range 2 10)]
+                         {:type :multiplication
+                          :x x
+                          :y y})
+                       (for [x (range 2 10)
+                             y (range 2 10)]
 
-                              {:type :division
-                               :x x
-                               :y y}))))
+                         {:type :division
+                          :x x
+                          :y y})))
 
 (def exercise-attributes (->> exercises
                               (map (fn [exercise]
