@@ -31,31 +31,6 @@
 (defn number-exercise-options-using-strings [right-answer-string]
   (vec (map str (number-exercise-options (Integer/parseInt right-answer-string)))))
 
-(defn multiplication-attributes [{:keys [x y]}]
-  {:question (str x " * " y)
-   :related-numbers [x y]
-   :group {:type :multiplication
-           :lower-number (min x y)
-           :higher-number (max x y)}
-   :answer (str (* x y))
-   :options-function number-exercise-options-using-strings})
-
-(defn division-attributes [{:keys [x y]}]
-  {:question (str (* x y) " : " x)
-   :related-numbers [x y]
-   :group {:type :multiplication
-           :lower-number (min x y)
-           :higher-number (max x y)}
-   :answer (str y)
-   :options-function number-exercise-options-using-strings})
-
-(def exercise-functions {:multiplication multiplication-attributes
-                         :division division-attributes})
-
-(defn operation-to-exercise [operation]
-  ((get exercise-functions
-        (:type operation))
-   operation))
 
 (def exercises (concat (for [x (range 2 10)
                              y (range 2 10)]
@@ -69,14 +44,25 @@
                           :x x
                           :y y})))
 
-(def exercise-attributes (->> exercises
-                              (map (fn [exercise]
-                                     [exercise
-                                      (assoc (case (:type exercise)
-                                               :multiplication (multiplication-attributes exercise)
-                                               :division (division-attributes exercise))
-                                             :exercise exercise)]))
-                              (into {})))
+(defmulti exercise-attributes :type)
+
+(defmethod exercise-attributes :multiplication [{:keys [x y]}]
+  {:question (str x " * " y)
+   :related-numbers [x y]
+   :group {:type :multiplication
+           :lower-number (min x y)
+           :higher-number (max x y)}
+   :answer (str (* x y))
+   :options-function number-exercise-options-using-strings})
+
+(defmethod exercise-attributes :division [{:keys [x y]}]
+  {:question (str (* x y) " : " x)
+   :related-numbers [x y]
+   :group {:type :multiplication
+           :lower-number (min x y)
+           :higher-number (max x y)}
+   :answer (str y)
+   :options-function number-exercise-options-using-strings})
 
 (def tekstin-koko 40)
 
@@ -278,7 +264,8 @@
 
 (defn options-view [wrong-answer-is-animating? state]
   (layouts/grid [(map (fn [option]
-                        (layouts/with-margin 10
+                        ;; hot-right-now TODO: remove me
+                        (layouts/with-margin 20
                           (teksti option tekstin-koko
                                   (if wrong-answer-is-animating?
                                     (let [right-answer (:answer (exercise-attributes (:exercise state)))]
@@ -674,6 +661,9 @@
                              [100 100 100 255])
                            (fn [] (start-game state-atom))]))
 
+
+(def green [50 180 50 255])
+
 (defn menu-view [state-atom]
   (let [state @state-atom
         player-history (get-in state [:players (:player state) :history])]
@@ -686,7 +676,7 @@
                                                                           (for [player-id (keys (:players state))]
                                                                             (button (get-in state [:players player-id :name])
                                                                                     (if (= player-id (:player state))
-                                                                                      [50 180 50 255]
+                                                                                      green
                                                                                       [10 10 10 255])
                                                                                     (if (= player-id (:player state))
                                                                                       [0 0 0 255]
@@ -773,10 +763,10 @@
                                                                                                     (reduce +))
                                                                                                (count exercises)))
                                                                "s / calculations with under 2.5s average duration: " (->> exercises
-                                                                                                                        (filter (fn [exercise]
-                                                                                                                                  (> 2.5 (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
-                                                                                                                                                                               exercise))))
-                                                                                                                        (count)))
+                                                                                                                          (filter (fn [exercise]
+                                                                                                                                    (> 2.5 (average-exercise-duration-in-seconds (get-in state [:players (:player state) :history])
+                                                                                                                                                                                 exercise))))
+                                                                                                                          (count)))
                                                           60
                                                           [50 180 50 255])
                                                   [buttons-view state-atom (can-play? @state-atom)]))))))

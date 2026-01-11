@@ -15,7 +15,7 @@
 
 (def minimum-duration 2500)
 (def maximum-duration 5000)
-(def candidate-exercise-count 4)
+(def candidate-exercise-count 6)
 
 (defn exercise-state [state exercise]
   (get-in state
@@ -51,7 +51,9 @@
 
 (defn group-familarity [player-exercises]
   (medley/map-vals (fn [exercise-statuses]
-                     (/ (reduce + (map (comp :average-duration second)
+                     (/ (reduce + (map (fn [[_exercise status]]
+                                         (or (:average-duration status)
+                                             maximum-duration))
                                        exercise-statuses))
                         (count exercise-statuses)))
                    (group-by (comp :group times-table/exercise-attributes first)
@@ -73,7 +75,19 @@
            (= y1
               (inc y2)))))
 
-(defn next-exercise-candidates [state]
+(defn similar-numbers? [exercises exercise]
+  (some (fn [familiar-exercise]
+          (or (close-numbers? (:x exercise)
+                              (:x familiar-exercise)
+                              (:y exercise)
+                              (:y familiar-exercise))
+              (close-numbers? (:y exercise)
+                              (:y familiar-exercise)
+                              (:x exercise)
+                              (:x familiar-exercise))))
+        exercises))
+
+(defn next-exercise-candidates [exercises similar-exercise? state]
   (let [player-exercise-statuses (get-in state [:players (:player state) :exercises])
         current-exercises (->> (keys player-exercise-statuses)
                                (filter (partial can-be-repeated? state))
@@ -82,27 +96,18 @@
                                               (repetition state exercise))
                                            (average-duration state exercise)])))
         group-familiarity-map (group-familarity player-exercise-statuses)
-        exercises-in-familiar-groups (->> times-table/exercises
+        exercises-in-familiar-groups (->> exercises
                                           (filter (partial can-be-repeated? state))
                                           (remove (set current-exercises))
                                           (remove (comp nil? group-familiarity-map :group times-table/exercise-attributes))
                                           (sort-by (comp group-familiarity-map :group times-table/exercise-attributes)))
-        exercises-with-familiar-numbers (->> times-table/exercises
+        exercises-with-familiar-numbers (->> exercises
                                              (filter (partial can-be-repeated? state))
                                              (remove (set current-exercises))
                                              (remove (set exercises-in-familiar-groups))
-                                             (filter (fn [exercise]
-                                                       (some (fn [familiar-exercise]
-                                                               (or (close-numbers? (:x exercise)
-                                                                                   (:x familiar-exercise)
-                                                                                   (:y exercise)
-                                                                                   (:y familiar-exercise))
-                                                                   (close-numbers? (:y exercise)
-                                                                                   (:y familiar-exercise)
-                                                                                   (:x exercise)
-                                                                                   (:x familiar-exercise))))
-                                                             (concat current-exercises
-                                                                     exercises-in-familiar-groups))))
+                                             (filter (partial similar-exercise?
+                                                              (concat current-exercises
+                                                                      exercises-in-familiar-groups)))
                                              (random/shuffle-collection))]
     (->> (concat current-exercises
                  exercises-in-familiar-groups
@@ -138,17 +143,19 @@
          (with-redefs [times-table/now (constantly 5000)
                        time-interval-in-milliseconds-after-repetition {1 1000}]
            (random/with-fixed-random-seed
-             (next-exercise-candidates {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 3000}
+             (next-exercise-candidates times-table/exercises
+                                       similar-numbers?
+                                       {:players {1 {:exercises {{:type :multiplication, :x 4, :y 3} {:average-duration 3000}
                                                                  {:type :multiplication, :x 4, :y 2} {:average-duration 5000
                                                                                                       :repetition 1
                                                                                                       :last-completion-time 0}}}},
                                         :player 1
                                         :exercise {:type :multiplication, :x 4, :y 3}}))))))
 
-(defn next-exercise [state]
-  (let [next-exercise-candidates-list (next-exercise-candidates state)]
+(defn next-exercise [exercises similar-exercise? state]
+  (let [next-exercise-candidates-list (next-exercise-candidates exercises similar-exercise? state)]
     (->> (concat next-exercise-candidates-list
-                 (->> times-table/exercises
+                 (->> exercises
                       (remove (set next-exercise-candidates-list))
                       (random/shuffle-collection)))
          (take candidate-exercise-count)
@@ -161,9 +168,9 @@
                     :exercise-rendering :question})
 
 
-(def state-file-name "continuous-times-table-state.edn")
+(def state-file-name "temp/continuous-times-table-state.edn")
 
-(defn save-game! [state]
+(defn save-game! [state-file-name state]
   (spit state-file-name
         (prn-str state)))
 
@@ -172,7 +179,7 @@
         (prn-str initial-state))
   )
 
-(defn keyboard-event-handler [state-atom _node event]
+(defn keyboard-event-handler [exercises similar-exercise? state-file-name state-atom _node event]
   (when (and (= :key-pressed (:type event))
              (some #{(:key event)}
                    times-table/answer-keys)
@@ -184,8 +191,8 @@
           answer (get (vec (:options state))
                       (times-table/anwser-key-to-option-index (:key event)))
           right-answer? (= (:answer (times-table/exercise-attributes (:exercise state)))
-                                  answer)
-          next-exercise (next-exercise state)]
+                           answer)
+          next-exercise (next-exercise exercises similar-exercise? state)]
 
       (swap! state-atom assoc :answer answer)
 
@@ -222,31 +229,54 @@
 
       (if right-answer?
         (do (swap! state-atom times-table/initialize-exercise next-exercise)
-            (save-game! @state-atom)
+            (save-game! state-file-name @state-atom)
             (animation/swap-state! animation/start :right-answer times-table/answer-animation-duration))
         (do (animation/swap-state! animation/add-animation-end-callback :wrong-answer (fn []
                                                                                         (swap! state-atom times-table/initialize-exercise next-exercise)))
             (animation/swap-state! animation/start :wrong-answer times-table/answer-animation-duration)))))
 
+  (when (and (= :key-pressed (:type event))
+             (= :e (:key event)))
+    (swap! state-atom update :exercise-rendering (fn [exercise-rendering]
+                                                   (case exercise-rendering
+                                                     :right-answer
+                                                     :question
+
+                                                     :question
+                                                     :right-answer
+
+                                                     :question))))
 
   (when (and (= :key-pressed (:type event))
-             (= :space (:key event)))
+             (= :r (:key event)))
     (swap! state-atom update :exercise-rendering (fn [exercise-rendering]
                                                    (case exercise-rendering
                                                      :average-duration
-                                                     :right-answer
-
-                                                     :right-answer
                                                      :question
 
                                                      :question
-                                                     :average-duration))))
+                                                     :average-duration
+
+                                                     :question))))
+
+  #_(when (and (= :key-pressed (:type event))
+               (= :space (:key event)))
+      (swap! state-atom update :exercise-rendering (fn [exercise-rendering]
+                                                     (case exercise-rendering
+                                                       :average-duration
+                                                       :right-answer
+
+                                                       :right-answer
+                                                       :question
+
+                                                       :question
+                                                       :average-duration))))
 
   (when (and (= :key-pressed (:type event))
              (= :tab (:key event)))
     (times-table/change-to-next-player state-atom)))
 
-(def ready-color (conj (color/hsluv-to-rgb 135 1.0 0.4) 1.0))
+(def ready-color times-table/green #_(conj (color/hsluv-to-rgb 135 1.0 0.4) 1.0))
 (def almost-ready-color (conj (color/hsluv-to-rgb 67 1.0 0.4) 1.0))
 (def unready-color (conj (color/hsluv-to-rgb 0 0.0 0.4) 1.0))
 
@@ -254,7 +284,6 @@
   (if (< duration minimum-duration)
     ready-color
     unready-color))
-
 
 (defn duration-cell [exercise duration]
   (let [width (* 6 times-table/tekstin-koko)]
@@ -271,12 +300,15 @@
                                                          ":" duration)
                                                     {:color [200 200 200 255]}))))))))
 
-(defn exericse-grid [state]
-  (layouts/grid (for [row (partition-by (comp first :related-numbers)
-                                        (map times-table/exercise-attributes times-table/exercises))]
+(defn exericse-grid [exercises state]
+  (layouts/grid (for [row (partition 8
+                                     #_(comp first :related-numbers)
+                                     (map (fn [exercise]
+                                            (assoc (times-table/exercise-attributes exercise)
+                                                   :exercise exercise))
+                                          exercises))]
                   (for [attributes row]
-
-                    {:node (let [width 150]
+                    {:node (let [width 250]
                              (layouts/with-margin 5
                                (layouts/vertically-2 {:margin 10 :centered? true}
                                                      (layouts/box 5
@@ -315,7 +347,7 @@
                                                                                                                    :line-width 2
                                                                                                                    :corner-arc-radius 20)
                                                                                               :width (/ width maximum-repetition)
-                                                                                              :height 10)))))))}))))
+                                                                                              :height 15)))))))}))))
 
 (defn add-repetition [exercise-state]
   (if (< (:average-duration exercise-state)
@@ -353,12 +385,13 @@
                   (update-in [:players 3 :exercises] (partial medley/map-vals set-last-completion-time))))
   )
 
-(defn- game-view  []
+(defn game-view  [state-file-name exercises similar-exercise?]
   (let [state-atom (dependable-atom/atom (if (.exists (File. state-file-name))
                                            (read-string (slurp state-file-name))
                                            initial-state))]
-    (swap! state-atom times-table/initialize-exercise (next-exercise @state-atom))
-    (fn []
+    (swap! state-atom times-table/initialize-exercise (next-exercise exercises similar-exercise? @state-atom))
+
+    (fn [_state-file-name _exercises similar-exercise?]
       (let [wrong-answer-is-animating? (animation/animating? @animation/state-atom
                                                              :wrong-answer)
             state @state-atom]
@@ -383,7 +416,7 @@
                                                                                        (times-table/options-view wrong-answer-is-animating?
                                                                                                                  state)
                                                                                        (layouts/with-margins 50 0 50 0
-                                                                                         [exericse-grid state])
+                                                                                         [exericse-grid exercises state])
 
                                                                                        (times-table/teksti (str "Number of completed repetitions: " (->> (get-in state [:players (:player state) :exercises])
                                                                                                                                                          (vals)
@@ -437,11 +470,16 @@
                                                                 (assoc (times-table/teksti "Wrong!" 50 color)
                                                                        :x 700
                                                                        :y y)))))))
-         :keyboard-event-handler [keyboard-event-handler state-atom]
+         :keyboard-event-handler [keyboard-event-handler exercises similar-exercise? state-file-name state-atom]
          :can-gain-focus? true}))))
 
+(defn times-table-game-view []
+  [game-view
+   state-file-name
+   times-table/exercises
+   similar-numbers?])
 
-(application/def-start game-view)
+(application/def-start times-table-game-view)
 
 (comment
   (reset! event-channel-atom nil)
