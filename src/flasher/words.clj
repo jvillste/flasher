@@ -35,6 +35,7 @@
 
 (defn options [words language right-answer]
   (->> words
+       (remove #{right-answer})
        (shuffle)
        (take 3)
        (map language)
@@ -64,10 +65,24 @@
        word-excercises-list
        (constantly false)])))
 
-(application/def-start game-view)
+(defn english-game-view [word-file-name]
+  (let [word-excercises-list (word-excercises (map english-word-to-word (edn/read-string (slurp (str "temp/" word-file-name ".edn")))))]
+    (fn []
+      [continuous-times-table/game-view
+       (str "temp/" word-file-name "-state.edn")
+       word-excercises-list
+       (constantly false)])))
 
+(def the-english-game-view (english-game-view "come-with-me-5-chapter-8"))
+
+#_(application/def-start game-view)
+
+(application/def-start the-english-game-view)
 
 (comment
   ((:options-function (times-table/exercise-attributes (first (word-excercises (take 25 (map english-word-to-word (edn/read-string (slurp "temp/level-up-7-page-96.edn"))))))))
    "foo")
-  ) ;; TODO: remove me
+
+  (count (edn/read-string (slurp "temp/come-with-me-5-page-108.edn")))
+
+  )
