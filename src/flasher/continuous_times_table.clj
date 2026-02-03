@@ -423,6 +423,8 @@
                                                                                                                                                          (map :repetition)
                                                                                                                                                          (reduce +))))
 
+                                                                                       (times-table/teksti "e: toggle answers, r: toggle average durations")
+
 
                                                                                        #_(layouts/with-maximum-size 1000 nil
                                                                                            (layouts/flow (let [exercises-to-average-durations (exercises-to-average-durations state)]
