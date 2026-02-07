@@ -266,19 +266,20 @@
   (layouts/grid [(map (fn [option]
                         ;; hot-right-now TODO: remove me
                         (layouts/with-margin 20
-                          (teksti option tekstin-koko
-                                  (if wrong-answer-is-animating?
-                                    (let [right-answer (:answer (exercise-attributes (:exercise state)))]
-                                      (cond (= right-answer option)
-                                            [0 150 0 255]
+                          (layouts/with-maximum-size 300 nil
+                            (teksti option tekstin-koko
+                                    (if wrong-answer-is-animating?
+                                      (let [right-answer (:answer (exercise-attributes (:exercise state)))]
+                                        (cond (= right-answer option)
+                                              [0 150 0 255]
 
-                                            (= (:answer state)
-                                               option)
-                                            [150 0 0 255]
+                                              (= (:answer state)
+                                                 option)
+                                              [150 0 0 255]
 
-                                            :else
-                                            (:text-color theme)))
-                                    (:text-color theme)))))
+                                              :else
+                                              (:text-color theme)))
+                                      (:text-color theme))))))
                       (:options state))
                  (map (fn [anser-key]
                         (layouts/with-margin 10 (teksti (name anser-key))))

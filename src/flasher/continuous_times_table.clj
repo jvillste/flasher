@@ -319,6 +319,22 @@
                                                          ":" duration)
                                                     {:color [200 200 200 255]}))))))))
 
+(defn teaser [string]
+  (let [maximum-length 12
+        length (count string)]
+    (str (subs string
+               0
+               (min maximum-length
+                    length))
+         (if (< maximum-length
+                length )
+           ".."
+           ""))))
+
+(deftest test-teaser
+  (is (= "en favoritkrydd.."
+         (teaser "en favoritkrydda, favoritkryddan, favoritkryddor, favoritkryddorna"))))
+
 (defn exericse-grid [exercises state]
   (layouts/grid (for [row (partition 8
                                      #_(comp first :related-numbers)
@@ -327,7 +343,7 @@
                                                    :exercise exercise))
                                           exercises))]
                   (for [attributes row]
-                    {:node (let [width 250]
+                    {:node (let [width 370]
                              (layouts/with-margin 5
                                (layouts/vertically-2 {:margin 10 :centered? true}
                                                      (layouts/box 5
@@ -357,9 +373,9 @@
                                                                                                                         1000))))
 
                                                                                              :right-answer
-                                                                                             (:answer attributes)
+                                                                                             (teaser (:answer attributes))
 
-                                                                                             (:question attributes))
+                                                                                             (teaser (:question attributes)))
                                                                                            times-table/tekstin-koko
                                                                                            [200 200 200 255])))))
 
