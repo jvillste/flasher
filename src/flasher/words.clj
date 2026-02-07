@@ -5,14 +5,6 @@
    [flasher.times-table :as times-table]
    [fungl.application :as application]))
 
-(def state-file-name "temp/level-up-7-page-96-state.edn")
-
-(defn english-word-to-word [word]
-  {:language-a (:english word)
-   :language-b (:finnish word)})
-
-(def level-up-7-page-96-words (map english-word-to-word (edn/read-string (slurp "temp/level-up-7-page-96.edn"))))
-
 (defn word-excercises [words]
   (concat (for [word words]
             (assoc word
@@ -22,23 +14,16 @@
           (for [word words]
             (assoc word
                    :question-language :language-b
-                   :type :word))
-          ;; (for [word words]
-          ;;   {:question (:finnish word)
-          ;;    :answer (:english word),
-          ;;    :type :word
-          ;;    :group {:type :word
-          ;;            :english (:english word)
-          ;;            :finnish (:finnish word)},
-          ;;    :options-function (partial options words :finnish)})
-          ))
+                   :type :word))))
 
-(defn options [words language right-answer]
-  (->> words
-       (remove #{right-answer})
+(def words-atom (atom []))
+
+(defn options [answer-language right-answer]
+  (->> @words-atom
+       (remove (comp #{right-answer} answer-language))
        (shuffle)
        (take 3)
-       (map language)
+       (map answer-language)
        (concat [right-answer])
        (shuffle)))
 
@@ -47,42 +32,34 @@
     :language-a :language-b
     :language-b :language-a))
 
-(def words (map english-word-to-word (edn/read-string (slurp "temp/level-up-7-page-96.edn"))))
-
 (defmethod times-table/exercise-attributes :word [exercise]
   {:question ((:question-language exercise) exercise)
    :answer ((answer-languate exercise)
             exercise)
    :group (dissoc exercise :question-language)
-   :options-function (partial options words (answer-languate exercise))}
-  #_exercise)
+   :options-function (partial options (answer-languate exercise))})
 
-(def game-view
-  (let [word-excercises-list (word-excercises (#_drop take 25 words))]
-    (fn []
-      [continuous-times-table/game-view
-       "temp/level-up-7-page-96-state.edn"
-       word-excercises-list
-       (constantly false)])))
-
-(defn english-game-view [word-file-name]
-  (let [word-excercises-list (word-excercises (map english-word-to-word (edn/read-string (slurp (str "temp/" word-file-name ".edn")))))]
+(defn game-view [language-a-key language-b-key word-file-name]
+  (let [words (map (fn [word]
+                     {:language-a (language-a-key word)
+                      :language-b (language-b-key word)})
+                   (edn/read-string (slurp (str "temp/" word-file-name ".edn"))))
+        word-excercises-list (word-excercises words)]
+    (reset! words-atom words)
     (fn []
       [continuous-times-table/game-view
        (str "temp/" word-file-name "-state.edn")
        word-excercises-list
        (constantly false)])))
 
-(def the-english-game-view (english-game-view "come-with-me-5-chapter-8"))
+(defn english-game-view [word-file-name]
+  (game-view :english :finnish word-file-name))
 
-#_(application/def-start game-view)
+(defn swedish-game-view [word-file-name]
+  (game-view :swedish :finnish word-file-name))
 
-(application/def-start the-english-game-view)
+(def the-game-view
+  #_(english-game-view "come-with-me-5-chapter-8")
+  (swedish-game-view "trampolin-3-page-106"))
 
-(comment
-  ((:options-function (times-table/exercise-attributes (first (word-excercises (take 25 (map english-word-to-word (edn/read-string (slurp "temp/level-up-7-page-96.edn"))))))))
-   "foo")
-
-  (count (edn/read-string (slurp "temp/come-with-me-5-page-108.edn")))
-
-  )
+(application/def-start the-game-view)
