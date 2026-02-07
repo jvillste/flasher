@@ -36,6 +36,11 @@
        :average-duration
        maximum-duration))
 
+(defn points [state exercise]
+  (get (exercise-state state exercise)
+       :points
+       0))
+
 (defn repetition [state exercise]
   (get (exercise-state state exercise)
        :repetition
@@ -94,7 +99,9 @@
                                (sort-by (fn [exercise]
                                           [(- maximum-repetition
                                               (repetition state exercise))
-                                           (average-duration state exercise)])))
+                                           (if (= :points (:rating-mode state))
+                                             (points state exercise)
+                                             (average-duration state exercise))])))
         group-familiarity-map (group-familarity player-exercise-statuses)
         exercises-in-familiar-groups (->> exercises
                                           (filter (partial can-be-repeated? state))
@@ -165,7 +172,8 @@
                               2 {:name "Jukka"}
                               3 {:name "Valo"}}
                     :player 1
-                    :exercise-rendering :question})
+                    :exercise-rendering :question
+                    :rating-mode :average-duration})
 
 
 (def state-file-name "temp/continuous-times-table-state.edn")
@@ -178,6 +186,8 @@
   (spit state-file-name
         (prn-str initial-state))
   )
+
+(def maximum-points 5)
 
 (defn keyboard-event-handler [exercises similar-exercise? state-file-name state-atom _node event]
   (when (and (= :key-pressed (:type event))
@@ -211,21 +221,30 @@
                                                                   maximum-duration))
                                                        2))
                        exercise-state (or exercise-state
-                                          {:repetition 0})]
-                   (cond (< new-average-duration
-                            minimum-duration)
-                         (assoc exercise-state
-                                :average-duration maximum-duration
-                                :repetition (min maximum-repetition
-                                                 (inc (repetition state (:exercise state))))
-                                :last-completion-time (times-table/now))
+                                          {:repetition 0
+                                           :points 0})
+                       old-points (or (:points exercise-state)
+                                      0)
+                       new-points (if right-answer?
+                                    (min (inc old-points) maximum-points)
+                                    (max 0 (dec old-points)))]
+                   (if (or (and (= (:rating-mode state)
+                                   :points)
+                                (>= new-points maximum-points))
+                           (and (= (:rating-mode state)
+                                   :average-duration)
+                                (< new-average-duration
+                                   minimum-duration)))
+                     (assoc exercise-state
+                            :average-duration maximum-duration
+                            :points 0
+                            :repetition (min maximum-repetition
+                                             (inc (repetition state (:exercise state))))
+                            :last-completion-time (times-table/now))
 
-                         right-answer?
-                         (assoc exercise-state
-                                :average-duration new-average-duration)
-
-                         :else
-                         exercise-state)))))
+                     (assoc exercise-state
+                            :average-duration new-average-duration
+                            :points new-points))))))
 
       (if right-answer?
         (do (swap! state-atom times-table/initialize-exercise next-exercise)
@@ -251,11 +270,11 @@
              (= :r (:key event)))
     (swap! state-atom update :exercise-rendering (fn [exercise-rendering]
                                                    (case exercise-rendering
-                                                     :average-duration
+                                                     :rating
                                                      :question
 
                                                      :question
-                                                     :average-duration
+                                                     :rating
 
                                                      :question))))
 
@@ -317,9 +336,12 @@
                                                                                                        0
                                                                                                        (float (max 0
                                                                                                                    (min 1
-                                                                                                                        (/ (- maximum-duration
-                                                                                                                              (average-duration state (:exercise attributes)))
-                                                                                                                           minimum-duration))))
+                                                                                                                        (if (= :points (:rating-mode state))
+                                                                                                                          (/ (points state (:exercise attributes))
+                                                                                                                             maximum-points)
+                                                                                                                          (/ (- maximum-duration
+                                                                                                                                (average-duration state (:exercise attributes)))
+                                                                                                                             minimum-duration)))))
                                                                                                        255]
                                                                                                       ready-color)
                                                                                        :corner-arc-radius 20)
@@ -328,9 +350,11 @@
                                                                       (layouts/center-horizontally
                                                                        (times-table/teksti (case (:exercise-rendering state)
 
-                                                                                             :average-duration
-                                                                                             (str (format "%.2f" (float (/ (average-duration state (:exercise attributes))
-                                                                                                                           1000))))
+                                                                                             :rating
+                                                                                             (if (= :points (:rating-mode state))
+                                                                                               (str (points state (:exercise attributes)))
+                                                                                               (format "%.2f" (float (/ (average-duration state (:exercise attributes))
+                                                                                                                        1000))))
 
                                                                                              :right-answer
                                                                                              (:answer attributes)
@@ -385,13 +409,14 @@
                   (update-in [:players 3 :exercises] (partial medley/map-vals set-last-completion-time))))
   )
 
-(defn game-view  [state-file-name exercises similar-exercise?]
-  (let [state-atom (dependable-atom/atom (if (.exists (File. state-file-name))
-                                           (read-string (slurp state-file-name))
-                                           initial-state))]
+(defn game-view [state-file-name exercises similar-exercise? & [{:keys [rating-mode] :or {rating-mode :average-duration}}]]
+  (let [state-atom (dependable-atom/atom (-> (if (.exists (File. state-file-name))
+                                               (read-string (slurp state-file-name))
+                                               initial-state)
+                                             (assoc :rating-mode rating-mode)))]
     (swap! state-atom times-table/initialize-exercise (next-exercise exercises similar-exercise? @state-atom))
 
-    (fn [_state-file-name _exercises similar-exercise?]
+    (fn [_state-file-name _exercises similar-exercise? & [_options]]
       (let [wrong-answer-is-animating? (animation/animating? @animation/state-atom
                                                              :wrong-answer)
             state @state-atom]
@@ -423,8 +448,8 @@
                                                                                                                                                          (map :repetition)
                                                                                                                                                          (reduce +))))
 
-                                                                                       (times-table/teksti "e: toggle answers, r: toggle average durations")
-
+                                                                                       (times-table/teksti "e: toggle answers, r: toggle rating")
+                                                                                       (times-table/teksti (str "rating mode: " (name (:rating-mode state))))
 
                                                                                        #_(layouts/with-maximum-size 1000 nil
                                                                                            (layouts/flow (let [exercises-to-average-durations (exercises-to-average-durations state)]

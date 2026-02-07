@@ -50,7 +50,8 @@
       [continuous-times-table/game-view
        (str "temp/" word-file-name "-state.edn")
        word-excercises-list
-       (constantly false)])))
+       (constantly false)
+       {:rating-mode :points}])))
 
 (defn english-game-view [word-file-name]
   (game-view :english :finnish word-file-name))
