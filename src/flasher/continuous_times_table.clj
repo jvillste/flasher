@@ -295,7 +295,7 @@
              (= :tab (:key event)))
     (times-table/change-to-next-player state-atom)))
 
-(def ready-color times-table/green #_(conj (color/hsluv-to-rgb 135 1.0 0.4) 1.0))
+(def ready-color #_times-table/green (conj (color/hsluv-to-rgb 135 1.0 0.4) 1.0))
 (def almost-ready-color (conj (color/hsluv-to-rgb 67 1.0 0.4) 1.0))
 (def unready-color (conj (color/hsluv-to-rgb 0 0.0 0.4) 1.0))
 
@@ -343,10 +343,10 @@
                                                    :exercise exercise))
                                           exercises))]
                   (for [attributes row]
-                    {:node (let [width 370]
+                    {:node (let [width 350]
                              (layouts/with-margin 5
-                               (layouts/vertically-2 {:margin 10 :centered? true}
-                                                     (layouts/box 5
+                               (layouts/vertically-2 {:margin 5 :centered? true}
+                                                     (layouts/box 1
                                                                   (visuals/rectangle-2 :fill-color  (if (can-be-repeated? state (:exercise attributes))
                                                                                                       [0
                                                                                                        0
@@ -435,7 +435,15 @@
     (fn [_state-file-name _exercises similar-exercise? & [_options]]
       (let [wrong-answer-is-animating? (animation/animating? @animation/state-atom
                                                              :wrong-answer)
-            state @state-atom]
+            state @state-atom
+            number-of-completed-repetitions (->> (get-in state [:players (:player state) :exercises])
+                                                 (vals)
+                                                 (map :repetition)
+                                                 (reduce +))
+            number-of-completions-in-this-session (- number-of-completed-repetitions
+                                                     (get-in state [:players (:player state) :number-of-completions-at-session-start]
+                                                             0))]
+        (def-locals) ;; TODO: remove me
         {:node (layouts/superimpose (visuals/rectangle-2 :fill-color (:background-color times-table/theme))
 
                                     (layouts/center-horizontally (layouts/vertically-2 {:centered? true}
@@ -459,10 +467,22 @@
                                                                                        (layouts/with-margins 50 0 50 0
                                                                                          [exericse-grid exercises state])
 
-                                                                                       (times-table/teksti (str "Number of completed repetitions: " (->> (get-in state [:players (:player state) :exercises])
-                                                                                                                                                         (vals)
-                                                                                                                                                         (map :repetition)
-                                                                                                                                                         (reduce +))))
+                                                                                       (times-table/teksti (str "Number of completed repetitions: " number-of-completed-repetitions))
+
+                                                                                       (times-table/teksti (str "Number of completions in this session: " number-of-completions-in-this-session))
+
+                                                                                       (times-table/teksti (str "Earned play time: " (* number-of-completions-in-this-session
+                                                                                                                                        2.5)
+                                                                                                                " minutes"))
+                                                                                       (times-table/button "Start new session"
+                                                                                                           [50 180 50 255]
+                                                                                                           [0 0 0 255]
+                                                                                                           (fn []
+                                                                                                             (swap! state-atom
+                                                                                                                    assoc-in
+                                                                                                                    [:players (:player state) :number-of-completions-at-session-start]
+                                                                                                                    number-of-completed-repetitions)))
+
 
                                                                                        (times-table/teksti "e: toggle answers, r: toggle rating")
                                                                                        (times-table/teksti (str "rating mode: " (name (:rating-mode state))))
