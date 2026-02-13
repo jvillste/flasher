@@ -64,7 +64,7 @@
    :answer (str y)
    :options-function number-exercise-options-using-strings})
 
-(def tekstin-koko 40)
+(def tekstin-koko 30)
 
 (def dark-theme {:text-color [150 150 150 255]
                  :background-color [0 0 0 255]

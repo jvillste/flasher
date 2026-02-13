@@ -61,6 +61,7 @@
 
 (def the-game-view
   #_(english-game-view "come-with-me-5-chapter-8")
-  (swedish-game-view "trampolin-3-page-106"))
+  #_(swedish-game-view "trampolin-3-page-106")
+  (swedish-game-view "trampolin-3-page-111"))
 
 (application/def-start the-game-view)

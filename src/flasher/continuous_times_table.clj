@@ -15,6 +15,8 @@
 
 (def minimum-duration 2500)
 (def maximum-duration 5000)
+(def maximum-duration-in-seconds (int (/ maximum-duration 1000)))
+
 (def candidate-exercise-count 6)
 
 (defn exercise-state [state exercise]
@@ -202,7 +204,17 @@
                       (times-table/anwser-key-to-option-index (:key event)))
           right-answer? (= (:answer (times-table/exercise-attributes (:exercise state)))
                            answer)
-          next-exercise (next-exercise exercises similar-exercise? state)]
+          next-exercise (next-exercise exercises similar-exercise? state)
+          duration (if right-answer?
+                     (min maximum-duration
+                          (- (times-table/now)
+                             (:exercise-start-time state)))
+                     maximum-duration)
+          new-average-duration (double (/ (+ duration
+                                             (get-in state
+                                                     [:players (:player state) :exercises (:exercise state) :average-duration]
+                                                     maximum-duration))
+                                          2))]
 
       (swap! state-atom assoc :answer answer)
 
@@ -211,16 +223,7 @@
                update-in
                [:players (:player state) :exercises (:exercise state)]
                (fn [exercise-state]
-                 (let [new-average-duration (double (/ (+ (if right-answer?
-                                                            (min maximum-duration
-                                                                 (- (times-table/now)
-                                                                    (:exercise-start-time state)))
-                                                            maximum-duration)
-                                                          (get-in state
-                                                                  [:players (:player state) :exercises (:exercise state) :average-duration]
-                                                                  maximum-duration))
-                                                       2))
-                       exercise-state (or exercise-state
+                 (let [exercise-state (or exercise-state
                                           {:repetition 0
                                            :points 0})
                        old-points (or (:points exercise-state)
@@ -244,7 +247,11 @@
 
                      (assoc exercise-state
                             :average-duration new-average-duration
-                            :points new-points))))))
+                            :points new-points)))))
+
+        (swap! state-atom assoc
+               :previous-duration duration
+               :previous-new-average-duration new-average-duration))
 
       (if right-answer?
         (do (swap! state-atom times-table/initialize-exercise next-exercise)
@@ -347,19 +354,19 @@
                              (layouts/with-margin 5
                                (layouts/vertically-2 {:margin 5 :centered? true}
                                                      (layouts/box 1
-                                                                  (visuals/rectangle-2 :fill-color  (if (can-be-repeated? state (:exercise attributes))
-                                                                                                      [0
-                                                                                                       0
-                                                                                                       (float (max 0
-                                                                                                                   (min 1
-                                                                                                                        (if (= :points (:rating-mode state))
-                                                                                                                          (/ (points state (:exercise attributes))
-                                                                                                                             maximum-points)
-                                                                                                                          (/ (- maximum-duration
-                                                                                                                                (average-duration state (:exercise attributes)))
-                                                                                                                             minimum-duration)))))
-                                                                                                       255]
-                                                                                                      ready-color)
+                                                                  (visuals/rectangle-2 :fill-color (if (can-be-repeated? state (:exercise attributes))
+                                                                                                     [0
+                                                                                                      0
+                                                                                                      (float (max 0
+                                                                                                                  (min 1
+                                                                                                                       (if (= :points (:rating-mode state))
+                                                                                                                         (/ (points state (:exercise attributes))
+                                                                                                                            maximum-points)
+                                                                                                                         (/ (- maximum-duration
+                                                                                                                               (average-duration state (:exercise attributes)))
+                                                                                                                            minimum-duration)))))
+                                                                                                      255]
+                                                                                                     ready-color)
                                                                                        :corner-arc-radius 20)
                                                                   (layouts/with-minimum-size width nil
                                                                     (layouts/with-maximum-size width nil
@@ -420,10 +427,36 @@
 
 (comment
   (#_save-game! (-> (read-string (slurp state-file-name))
-                  (update-in [:players 1 :exercises] (partial medley/map-vals set-last-completion-time))
-                  (update-in [:players 2 :exercises] (partial medley/map-vals set-last-completion-time))
-                  (update-in [:players 3 :exercises] (partial medley/map-vals set-last-completion-time))))
+                    (update-in [:players 1 :exercises] (partial medley/map-vals set-last-completion-time))
+                    (update-in [:players 2 :exercises] (partial medley/map-vals set-last-completion-time))
+                    (update-in [:players 3 :exercises] (partial medley/map-vals set-last-completion-time))))
   )
+
+(defn- block [fill-color]
+  (let [corner-radius 20]
+    (layouts/box 5
+                 (visuals/rectangle-2 :fill-color nil
+                                      :draw-color [80 80 80 255]
+                                      :line-width 2
+                                      :corner-arc-radius corner-radius)
+                 (assoc (visuals/rectangle-2 :fill-color fill-color
+                                             :corner-arc-radius corner-radius)
+                        :width 50
+                        :height 25))))
+
+
+(defn- duration-bar [exercise-duration]
+  (let [duration-in-seconds (int (-> (Math/floor (/ exercise-duration
+                                                    1000))
+                                     (min maximum-duration-in-seconds)))]
+
+
+    (layouts/horizontally-2 {:margin 2}
+                            (concat (repeat (- maximum-duration-in-seconds
+                                               duration-in-seconds)
+                                            (block (times-table/duration-bar-color duration-in-seconds)))
+                                    (repeat duration-in-seconds
+                                            (block [0 0 0 0]))))))
 
 (defn game-view [state-file-name exercises similar-exercise? & [{:keys [rating-mode] :or {rating-mode :average-duration}}]]
   (let [state-atom (dependable-atom/atom (-> (if (.exists (File. state-file-name))
@@ -433,6 +466,7 @@
     (swap! state-atom times-table/initialize-exercise (next-exercise exercises similar-exercise? @state-atom))
 
     (fn [_state-file-name _exercises similar-exercise? & [_options]]
+      (animation/swap-state! animation/set-wake-up 1000)
       (let [wrong-answer-is-animating? (animation/animating? @animation/state-atom
                                                              :wrong-answer)
             state @state-atom
@@ -443,29 +477,32 @@
             number-of-completions-in-this-session (- number-of-completed-repetitions
                                                      (get-in state [:players (:player state) :number-of-completions-at-session-start]
                                                              0))]
-        (def-locals) ;; TODO: remove me
         {:node (layouts/superimpose (visuals/rectangle-2 :fill-color (:background-color times-table/theme))
 
-                                    (layouts/center-horizontally (layouts/vertically-2 {:centered? true}
-                                                                                       (layouts/with-margins 50 0 50 0
-                                                                                         (layouts/horizontally-2 {:margin 20}
-                                                                                                                 (for [player-id (keys (:players state))]
-                                                                                                                   (times-table/button (get-in state [:players player-id :name])
-                                                                                                                                       (if (= player-id (:player state))
-                                                                                                                                         [50 180 50 255]
-                                                                                                                                         [10 10 10 255])
-                                                                                                                                       (if (= player-id (:player state))
-                                                                                                                                         [0 0 0 255]
-                                                                                                                                         [150 150 150 255])
-                                                                                                                                       (fn []
-                                                                                                                                         (swap! state-atom assoc :player player-id))))))
-                                                                                       (layouts/with-margins 50 0 50 0
-                                                                                         (times-table/teksti (:question (times-table/exercise-attributes (:exercise state)))))
+                                    (layouts/center-horizontally (layouts/vertically-2 {:centered? true :margin 10}
+                                                                                       (layouts/horizontally-2 {:margin 20}
+                                                                                                               (for [player-id (keys (:players state))]
+                                                                                                                 (times-table/button (get-in state [:players player-id :name])
+                                                                                                                                     (if (= player-id (:player state))
+                                                                                                                                       [50 180 50 255]
+                                                                                                                                       [10 10 10 255])
+                                                                                                                                     (if (= player-id (:player state))
+                                                                                                                                       [0 0 0 255]
+                                                                                                                                       [150 150 150 255])
+                                                                                                                                     (fn []
+                                                                                                                                       (swap! state-atom assoc :player player-id)))))
+                                                                                       (times-table/teksti (:question (times-table/exercise-attributes (:exercise state))))
 
                                                                                        (times-table/options-view wrong-answer-is-animating?
                                                                                                                  state)
-                                                                                       (layouts/with-margins 50 0 50 0
-                                                                                         [exericse-grid exercises state])
+
+                                                                                       (when (= :average-duration (:rating-mode state))
+                                                                                         (duration-bar (- (times-table/now)
+                                                                                                          (:exercise-start-time state))))
+                                                                                       (when (= :average-duration (:rating-mode state))
+                                                                                         (times-table/teksti (str (int (:previous-duration state 0)) " -> " (int (:previous-new-average-duration state 0)))))
+
+                                                                                       [exericse-grid exercises state]
 
                                                                                        (times-table/teksti (str "Number of completed repetitions: " number-of-completed-repetitions))
 
@@ -540,7 +577,8 @@
   [game-view
    state-file-name
    times-table/exercises
-   similar-numbers?])
+   similar-numbers?
+   {:rating-mode :average-duration #_:points}])
 
 (application/def-start times-table-game-view)
 
