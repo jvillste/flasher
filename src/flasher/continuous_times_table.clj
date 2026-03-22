@@ -458,7 +458,8 @@
                                     (repeat duration-in-seconds
                                             (block [0 0 0 0]))))))
 
-(defn game-view [state-file-name exercises similar-exercise? & [{:keys [rating-mode] :or {rating-mode :average-duration}}]]
+(defn game-view [state-file-name exercises similar-exercise? & [{:keys [rating-mode playtime-minutes-per-completed-repetition] :or {rating-mode :average-duration
+                                                                                                                                    playtime-minutes-per-completed-repetition 1.25}}]]
   (let [state-atom (dependable-atom/atom (-> (if (.exists (File. state-file-name))
                                                (read-string (slurp state-file-name))
                                                initial-state)
@@ -509,7 +510,7 @@
                                                                                        (times-table/teksti (str "Number of completions in this session: " number-of-completions-in-this-session))
 
                                                                                        (times-table/teksti (str "Earned play time: " (* number-of-completions-in-this-session
-                                                                                                                                        2.5)
+                                                                                                                                        playtime-minutes-per-completed-repetition)
                                                                                                                 " minutes"))
                                                                                        (times-table/button "Start new session"
                                                                                                            [50 180 50 255]
