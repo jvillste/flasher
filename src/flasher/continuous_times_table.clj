@@ -216,7 +216,10 @@
                                                      maximum-duration))
                                           2))]
 
-      (swap! state-atom assoc :answer answer)
+      (swap! state-atom (fn [state]
+                          (-> state
+                              (assoc :answer answer)
+                              (assoc-in [:players (:player state) :last-answer-time] (times-table/now)))))
 
       (when (can-be-repeated? state (:exercise state))
         (swap! state-atom
@@ -512,14 +515,23 @@
                                                                                        (times-table/teksti (str "Earned play time: " (* number-of-completions-in-this-session
                                                                                                                                         playtime-minutes-per-completed-repetition)
                                                                                                                 " minutes"))
+                                                                                       (times-table/teksti (str "Session duration in minutes: " (int (/ (let [session-start-ime (or (get-in state [:players (:player state) :session-start-time])
+                                                                                                                                                                                    (times-table/now))]
+                                                                                                                                                          (- (or (get-in state [:players (:player state) :last-answer-time])
+                                                                                                                                                                 session-start-ime)
+                                                                                                                                                             session-start-ime))
+                                                                                                                                                        (* 60 1000)))))
                                                                                        (times-table/button "Start new session"
                                                                                                            [50 180 50 255]
                                                                                                            [0 0 0 255]
                                                                                                            (fn []
                                                                                                              (swap! state-atom
-                                                                                                                    assoc-in
-                                                                                                                    [:players (:player state) :number-of-completions-at-session-start]
-                                                                                                                    number-of-completed-repetitions)))
+                                                                                                                    (fn [state]
+                                                                                                                      (-> state
+                                                                                                                          (assoc-in [:players (:player state) :number-of-completions-at-session-start]
+                                                                                                                                    number-of-completed-repetitions)
+                                                                                                                          (assoc-in [:players (:player state) :session-start-time]
+                                                                                                                                    (times-table/now)))))))
 
 
                                                                                        (times-table/teksti "e: toggle answers, r: toggle rating")
@@ -579,7 +591,7 @@
    state-file-name
    times-table/exercises
    similar-numbers?
-   {:rating-mode :average-duration #_:points}])
+   {:rating-mode #_:average-duration :points}])
 
 (application/def-start times-table-game-view)
 
