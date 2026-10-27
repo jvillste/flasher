@@ -161,7 +161,7 @@
                                         :player 1
                                         :exercise {:type :multiplication, :x 4, :y 3}}))))))
 
-(defn next-exercise [exercises similar-exercise? state]
+(defn next-exercise [exercises similar-exercise? candidate-exercise-count state]
   (let [next-exercise-candidates-list (next-exercise-candidates exercises similar-exercise? state)]
     (->> (concat next-exercise-candidates-list
                  (->> exercises
@@ -189,9 +189,9 @@
         (prn-str initial-state))
   )
 
-(def maximum-points 5)
+(def maximum-points 3)
 
-(defn keyboard-event-handler [exercises similar-exercise? state-file-name state-atom _node event]
+(defn keyboard-event-handler [exercises similar-exercise? candidate-exercise-count state-file-name state-atom _node event]
   (when (and (= :key-pressed (:type event))
              (some #{(:key event)}
                    times-table/answer-keys)
@@ -204,7 +204,7 @@
                       (times-table/anwser-key-to-option-index (:key event)))
           right-answer? (= (:answer (times-table/exercise-attributes (:exercise state)))
                            answer)
-          next-exercise (next-exercise exercises similar-exercise? state)
+          next-exercise (next-exercise exercises similar-exercise? candidate-exercise-count state)
           duration (if right-answer?
                      (min maximum-duration
                           (- (times-table/now)
@@ -461,13 +461,14 @@
                                     (repeat duration-in-seconds
                                             (block [0 0 0 0]))))))
 
-(defn game-view [state-file-name exercises similar-exercise? & [{:keys [rating-mode playtime-minutes-per-completed-repetition] :or {rating-mode :average-duration
-                                                                                                                                    playtime-minutes-per-completed-repetition 1.25}}]]
+(defn game-view [state-file-name exercises similar-exercise? & [{:keys [rating-mode playtime-minutes-per-completed-repetition candidate-exercise-count] :or {rating-mode :average-duration
+                                                                                                                                                             playtime-minutes-per-completed-repetition 1.25
+                                                                                                                                                             candidate-exercise-count 6}}]]
   (let [state-atom (dependable-atom/atom (-> (if (.exists (File. state-file-name))
                                                (read-string (slurp state-file-name))
                                                initial-state)
                                              (assoc :rating-mode rating-mode)))]
-    (swap! state-atom times-table/initialize-exercise (next-exercise exercises similar-exercise? @state-atom))
+    (swap! state-atom times-table/initialize-exercise (next-exercise exercises similar-exercise? candidate-exercise-count @state-atom))
 
     (fn [_state-file-name _exercises similar-exercise? & [_options]]
       (animation/swap-state! animation/set-wake-up 1000)
@@ -583,7 +584,7 @@
                                                                 (assoc (times-table/teksti "Wrong!" 50 color)
                                                                        :x 700
                                                                        :y y)))))))
-         :keyboard-event-handler [keyboard-event-handler exercises similar-exercise? state-file-name state-atom]
+         :keyboard-event-handler [keyboard-event-handler exercises similar-exercise? candidate-exercise-count state-file-name state-atom]
          :can-gain-focus? true}))))
 
 (defn times-table-game-view []

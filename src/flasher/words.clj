@@ -1,5 +1,6 @@
 (ns flasher.words
   (:require
+   [clojure.data.csv :as csv]
    [clojure.edn :as edn]
    [flasher.continuous-times-table :as continuous-times-table]
    [flasher.times-table :as times-table]
@@ -51,7 +52,8 @@
        (str "temp/" word-file-name "-state.edn")
        word-excercises-list
        (constantly false)
-       {:rating-mode :points}])))
+       {:rating-mode :points
+        :candidate-exercise-count 12}])))
 
 (defn english-game-view [word-file-name]
   (game-view :english :finnish word-file-name))
@@ -59,9 +61,25 @@
 (defn swedish-game-view [word-file-name]
   (game-view :swedish :finnish word-file-name))
 
+(defn generic-game-view [word-file-name]
+  (game-view :1 :2 word-file-name))
+
 (def the-game-view
   #_(english-game-view "come-with-me-5-chapter-8")
   #_(swedish-game-view "trampolin-3-page-106")
-  (swedish-game-view "trampolin-3-page-111"))
+  #_(swedish-game-view "trampolin-3-page-111")
+  #_(generic-game-view "50-60-music")
+  (english-game-view "come-with-me"))
 
 (application/def-start the-game-view)
+
+(comment
+  (edn/read-string (slurp (str "temp/come-with-me.edn")))
+
+  (->> (csv/read-csv (slurp "temp/50-60-music.csv"))
+       (drop 1)
+       (map (fn [[first second]]
+              {:1 first
+               :2 second}))
+       (vec))
+  ) ;; TODO: remove me

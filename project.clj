@@ -6,7 +6,9 @@
   :dependencies [[org.clojure/clojure "1.12.0"]
                  [flow-gl/flow-gl "4"]
                  [medley "1.3.0"]
-                 [clojure.java-time "0.3.3"]]
+                 [clojure.java-time "0.3.3"]
+                 [metosin/jsonista "1.0.1"]
+                 [org.clojure/data.csv "1.1.1"]]
   :repl-options {:init-ns flasher.core}
   :main flasher.times-table
   :profiles {:uberjar {:aot :all}}
